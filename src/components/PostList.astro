@@ -1,0 +1,36 @@
+---
+import type { Post } from '../lib/posts';
+import { postUrl, formatDate } from '../lib/posts';
+import { SECTIONS } from '../consts';
+
+interface Props {
+  posts: Post[];
+  showSection?: boolean;
+}
+
+const { posts, showSection = false } = Astro.props;
+---
+
+<ul class="post-list">
+  {
+    posts.map((post) => (
+      <li>
+        <a class="post-title" href={postUrl(post)} lang={post.data.lang}>
+          {post.data.title}
+        </a>
+        {post.data.draft && <span class="draft-badge">draft</span>}
+        <div class="post-meta">
+          <time datetime={post.data.date.toISOString()}>
+            {formatDate(post.data.date)}
+          </time>
+          {showSection && <> · {SECTIONS[post.data.section]}</>}
+        </div>
+        {post.data.description && (
+          <div class="post-desc" lang={post.data.lang}>
+            {post.data.description}
+          </div>
+        )}
+      </li>
+    ))
+  }
+</ul>

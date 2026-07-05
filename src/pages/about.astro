@@ -1,0 +1,21 @@
+---
+import Base from '../layouts/Base.astro';
+import { url } from '../lib/posts';
+---
+
+<Base title="About" description="About me — clinical background, moving into applied AI.">
+  <article class="prose">
+    <h1>About</h1>
+    <!-- Placeholder — replace with your own narrative:
+         clinical background → why AI → what you're building toward. -->
+    <p>
+      I'm a clinician by training, currently transitioning into applied AI with
+      a focus on healthcare. This page will hold my story: where I started, why
+      I'm making this move, and what I'm working toward.
+    </p>
+    <p>
+      In the meantime, the <a href={url('/log/')}>Learning Log</a> is the most honest
+      picture of what I'm doing day to day.
+    </p>
+  </article>
+</Base>

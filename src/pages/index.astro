@@ -1,0 +1,19 @@
+---
+import Base from '../layouts/Base.astro';
+import PostList from '../components/PostList.astro';
+import { getVisiblePosts } from '../lib/posts';
+
+const posts = (await getVisiblePosts()).slice(0, 15);
+---
+
+<Base>
+  <p class="section-intro">
+    <!-- Placeholder intro: replace with 2–3 sentences about yourself. -->
+    Hi, I'm Hannah. I come from a clinical background and I'm teaching myself to
+    build with AI, with an eye on healthcare. This site is my learning log,
+    essays, and projects — built in public.
+  </p>
+
+  <h2 style="margin-top: 2.5rem;">Recent</h2>
+  <PostList posts={posts} showSection />
+</Base>
