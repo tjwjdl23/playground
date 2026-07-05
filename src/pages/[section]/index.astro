@@ -1,0 +1,28 @@
+---
+import Base from '../../layouts/Base.astro';
+import PostList from '../../components/PostList.astro';
+import { getVisiblePosts } from '../../lib/posts';
+import { SECTIONS, type Section } from '../../consts';
+
+export async function getStaticPaths() {
+  const posts = await getVisiblePosts();
+  const present = new Set(posts.map((p) => p.data.section));
+  // Only sections with at least one visible post get a page,
+  // so empty categories never appear publicly.
+  return (Object.keys(SECTIONS) as Section[])
+    .filter((s) => present.has(s))
+    .map((section) => ({
+      params: { section },
+      props: { posts: posts.filter((p) => p.data.section === section) },
+    }));
+}
+
+const { section } = Astro.params;
+const { posts } = Astro.props;
+const name = SECTIONS[section as Section];
+---
+
+<Base title={name} description={`${name} — all posts.`}>
+  <h1>{name}</h1>
+  <PostList posts={posts} />
+</Base>
