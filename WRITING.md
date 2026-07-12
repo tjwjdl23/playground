@@ -2,6 +2,40 @@
 
 How to write and publish posts on this blog.
 
+There are three ways to write, from most to least convenient:
+
+1. **Pages CMS** (browser editor) — see [Writing from the browser](#writing-from-the-browser-pages-cms)
+2. **GitHub web editor** — see [Editing on GitHub](#editing-on-githubcom)
+3. **Locally** — the workflow below
+
+## Writing from the browser (Pages CMS)
+
+One-time setup:
+
+1. Go to **https://app.pagescms.org** and sign in with your GitHub account.
+2. Grant it access to the `tjwjdl23/playground` repository.
+3. Open the repo in Pages CMS — the editor reads `.pages.yml` at the repo
+   root and shows a section-by-section post editor automatically.
+
+Day to day: open app.pagescms.org (bookmark it), pick a section, click
+**Add entry**, write, save. Saving commits straight to `main`, which
+auto-deploys the site in ~1–2 minutes. New posts default to
+**Draft = on**, so nothing goes public until you uncheck it and save.
+Images uploaded in the editor land in `public/images/` with the correct
+URL prefix.
+
+## Editing on github.com
+
+No setup needed:
+
+- **Edit an existing post:** browse to the file on github.com and press
+  the pencil icon — or press `.` anywhere in the repo to open the full
+  VS Code web editor (github.dev).
+- **New post:** open the section folder, e.g.
+  [`src/content/posts/log`](https://github.com/tjwjdl23/playground/tree/main/src/content/posts/log),
+  then **Add file → Create new file**. Paste the frontmatter template
+  below, write, and commit to `main`.
+
 ## Creating a new post
 
 1. Add a Markdown file under `src/content/posts/<section>/`, where

@@ -1,0 +1,181 @@
+# Pages CMS configuration — https://app.pagescms.org
+# Log in there with GitHub, pick this repo, and you get a web editor.
+# Saving in the CMS commits to main, which auto-deploys the site.
+
+media:
+  input: public/images
+  output: /playground/images
+
+content:
+  - name: log
+    label: Learning Log
+    type: collection
+    path: src/content/posts/log
+    view: &view
+      fields: [title, date, draft, lang]
+      sort: [date, title]
+      default:
+        sort: date
+        order: desc
+    fields:
+      - name: title
+        label: Title
+        type: string
+        required: true
+      - name: date
+        label: Date
+        type: date
+        required: true
+      - name: section
+        label: Section
+        type: select
+        default: log
+        options:
+          values: [log, essays, projects, notes]
+      - name: tags
+        label: Tags
+        type: string
+        list: true
+      - name: draft
+        label: Draft (unchecked = published)
+        type: boolean
+        default: true
+      - name: lang
+        label: Language
+        type: select
+        default: ko
+        options:
+          values: [ko, en]
+      - name: description
+        label: Description (one-line summary)
+        type: string
+        required: true
+      - name: body
+        label: Body
+        type: rich-text
+
+  - name: essays
+    label: Essays
+    type: collection
+    path: src/content/posts/essays
+    view: *view
+    fields:
+      - name: title
+        label: Title
+        type: string
+        required: true
+      - name: date
+        label: Date
+        type: date
+        required: true
+      - name: section
+        label: Section
+        type: select
+        default: essays
+        options:
+          values: [log, essays, projects, notes]
+      - name: tags
+        label: Tags
+        type: string
+        list: true
+      - name: draft
+        label: Draft (unchecked = published)
+        type: boolean
+        default: true
+      - name: lang
+        label: Language
+        type: select
+        default: ko
+        options:
+          values: [ko, en]
+      - name: description
+        label: Description (one-line summary)
+        type: string
+        required: true
+      - name: body
+        label: Body
+        type: rich-text
+
+  - name: projects
+    label: Projects
+    type: collection
+    path: src/content/posts/projects
+    view: *view
+    fields:
+      - name: title
+        label: Title
+        type: string
+        required: true
+      - name: date
+        label: Date
+        type: date
+        required: true
+      - name: section
+        label: Section
+        type: select
+        default: projects
+        options:
+          values: [log, essays, projects, notes]
+      - name: tags
+        label: Tags
+        type: string
+        list: true
+      - name: draft
+        label: Draft (unchecked = published)
+        type: boolean
+        default: true
+      - name: lang
+        label: Language
+        type: select
+        default: ko
+        options:
+          values: [ko, en]
+      - name: description
+        label: Description (one-line summary)
+        type: string
+        required: true
+      - name: body
+        label: Body
+        type: rich-text
+
+  - name: notes
+    label: Notes
+    type: collection
+    path: src/content/posts/notes
+    view: *view
+    fields:
+      - name: title
+        label: Title
+        type: string
+        required: true
+      - name: date
+        label: Date
+        type: date
+        required: true
+      - name: section
+        label: Section
+        type: select
+        default: notes
+        options:
+          values: [log, essays, projects, notes]
+      - name: tags
+        label: Tags
+        type: string
+        list: true
+      - name: draft
+        label: Draft (unchecked = published)
+        type: boolean
+        default: true
+      - name: lang
+        label: Language
+        type: select
+        default: ko
+        options:
+          values: [ko, en]
+      - name: description
+        label: Description (one-line summary)
+        type: string
+        required: true
+      - name: body
+        label: Body
+        type: rich-text
