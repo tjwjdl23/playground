@@ -1,0 +1,17 @@
+{
+  "name": "excel-editor-tests",
+  "private": true,
+  "type": "module",
+  "description": "public/excel-editor.html 과 public/vendor/xlsx-core.js 에 대한 테스트 (본체 앱과 의존성 분리)",
+  "scripts": {
+    "test": "node core.test.mjs && node ui.test.mjs",
+    "test:core": "node core.test.mjs",
+    "test:ui": "node ui.test.mjs"
+  },
+  "devDependencies": {
+    "@xmldom/xmldom": "^0.9.0",
+    "fflate": "^0.8.2",
+    "playwright": "^1.47.0",
+    "xlsx": "^0.18.5"
+  }
+}
