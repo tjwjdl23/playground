@@ -1,26 +1,105 @@
 @echo off
-rem ---------------------------------------------------------------------------
-rem  Excel editor - local web server launcher (Windows, no install required)
-rem
-rem  Chrome never grants file-write permission to pages opened as file://,
-rem  so the editor must be served over http://127.0.0.1 instead.
-rem  Put this file next to the editor HTML and double-click it.
-rem ---------------------------------------------------------------------------
+chcp 65001 >nul 2>&1
 setlocal
 set "SELF=%~f0"
 set "EDITOR_DIR=%~dp0"
 title Excel editor - local server
-powershell -NoProfile -ExecutionPolicy Bypass -Command "$t=[IO.File]::ReadAllText($env:SELF,[Text.Encoding]::UTF8); $i=$t.IndexOf('#PS'+'_START'); iex $t.Substring($i)"
-endlocal
+cd /d "%~dp0"
+
+echo.
+echo   ============================================
+echo     엑셀 편집기 - 로컬 서버
+echo   ============================================
+echo   폴더: %CD%
+echo.
+
+rem --- 1) Python 이 있으면 가장 안정적이므로 먼저 쓴다 --------------------
+set "PY="
+py -3 -c "pass" >nul 2>&1
+if not errorlevel 1 set "PY=py -3"
+python -c "pass" >nul 2>&1
+if not errorlevel 1 if not defined PY set "PY=python"
+python3 -c "pass" >nul 2>&1
+if not errorlevel 1 if not defined PY set "PY=python3"
+if defined PY goto :python
+
+rem --- 2) PowerShell 이 제한 없이 쓸 수 있는지 확인 -----------------------
+where powershell >nul 2>&1
+if errorlevel 1 goto :nothing
+
+set "LM="
+for /f "usebackq delims=" %%L in (`powershell -NoProfile -ExecutionPolicy Bypass -Command "$ExecutionContext.SessionState.LanguageMode" 2^>nul`) do set "LM=%%L"
+if not defined LM goto :psblocked
+if /i not "%LM%"=="FullLanguage" goto :psrestricted
+goto :powershell
+
+rem ------------------------------------------------------------------ Python
+:python
+echo   Python 을 찾았습니다 (%PY%). 서버를 시작합니다.
+echo.
+echo     http://127.0.0.1:8123/
+echo.
+echo   * 브라우저가 자동으로 열립니다. 안 열리면 위 주소를 직접 입력하세요.
+echo   * 목록에서 엑셀편집기.html 을 클릭하세요.
+echo   * 편집이 끝나면 이 창을 닫으세요.
+echo.
+start "" /b cmd /c "ping -n 3 127.0.0.1 >nul & start http://127.0.0.1:8123/"
+%PY% -m http.server 8123 --bind 127.0.0.1
+goto :end
+
+rem -------------------------------------------------------------- PowerShell
+:powershell
+echo   PowerShell 로 서버를 시작합니다.
+echo.
+powershell -NoProfile -ExecutionPolicy Bypass -Command "try { $t=[IO.File]::ReadAllText($env:SELF,[Text.Encoding]::UTF8); $i=$t.IndexOf('#PS'+'_START'); if ($i -lt 0) { throw '스크립트 구간을 찾지 못했습니다.' }; Invoke-Expression $t.Substring($i) } catch { Write-Host ''; Write-Host ('오류: ' + $_.Exception.Message) -ForegroundColor Red; Write-Host $_.ScriptStackTrace }"
+goto :end
+
+rem ------------------------------------------------------------------ 안내
+:psrestricted
+echo   [!] 이 PC 의 PowerShell 이 제한 모드입니다 (LanguageMode=%LM%).
+echo       보안 정책으로 잠겨 있어 서버를 띄울 수 없습니다.
+goto :advice
+
+:psblocked
+echo   [!] PowerShell 을 실행할 수 없습니다 (보안 정책 차단으로 보입니다).
+goto :advice
+
+:nothing
+echo   [!] Python 도 PowerShell 도 사용할 수 없습니다.
+goto :advice
+
+:advice
+echo.
+echo   대신 이렇게 하세요:
+echo.
+echo     1. 웹 주소로 여는 방법 (설치 · 실행 권한 필요 없음)
+echo        인터넷이 되는 PC 라면 배포된 주소를 즐겨찾기 해두고 쓰면 됩니다.
+echo        (담당자에게 주소를 요청하세요)
+echo.
+echo     2. Python 설치가 가능하다면
+echo        https://www.python.org/downloads/ 설치 후 이 파일을 다시 실행
+echo.
+echo     3. 그래도 안 되면
+echo        엑셀편집기.html 을 그냥 열어서 편집한 뒤
+echo        [위치를 골라 저장...] 또는 [수정본 내려받기] 버튼을 쓰세요.
+echo        (원본 자동 덮어쓰기만 안 될 뿐, 수정 자체는 됩니다)
+echo.
+
+:end
+echo.
+echo   서버가 종료되었습니다.
+echo   위에 오류 메시지가 있으면 그대로 알려주세요.
+echo.
+pause
 exit /b
 
 #PS_START
 # ---------------------------------------------------------------------------
-# 이 아래는 위의 batch 줄이 실행하는 PowerShell 코드다.
+# 위 batch 구간이 이 아래 PowerShell 코드를 읽어서 실행한다.
 # 폴더 안의 파일을 127.0.0.1 로만 제공하는 최소 웹 서버.
 # ---------------------------------------------------------------------------
 $ErrorActionPreference = 'Stop'
-[Console]::OutputEncoding = [Text.Encoding]::UTF8
+try { [Console]::OutputEncoding = [Text.Encoding]::UTF8 } catch { }
 
 $root = $env:EDITOR_DIR
 if (-not $root) { $root = (Get-Location).Path }
@@ -29,15 +108,14 @@ $root = (Resolve-Path -LiteralPath $root).Path.TrimEnd('\')
 $pages = @(Get-ChildItem -LiteralPath $root -Filter *.html -File | Sort-Object Name)
 if ($pages.Count -eq 0) {
   Write-Host ''
-  Write-Host '  이 폴더에 HTML 파일이 없습니다.' -ForegroundColor Red
-  Write-Host "  폴더: $root"
-  Read-Host '  엔터를 누르면 닫힙니다'
-  exit
+  Write-Host ('  이 폴더에 HTML 파일이 없습니다: ' + $root) -ForegroundColor Red
+  return
 }
 $target = $pages | Where-Object { $_.Name -like '*편집기*' -or $_.Name -like '*editor*' } | Select-Object -First 1
 if (-not $target) { $target = $pages[0] }
 
 $listener = $null
+$port = 0
 foreach ($p in 8123..8143) {
   try {
     $l = New-Object System.Net.Sockets.TcpListener([System.Net.IPAddress]::Loopback, $p)
@@ -48,19 +126,17 @@ foreach ($p in 8123..8143) {
   } catch { }
 }
 if (-not $listener) {
-  Write-Host '  사용할 수 있는 포트를 찾지 못했습니다.' -ForegroundColor Red
-  Read-Host '  엔터를 누르면 닫힙니다'
-  exit
+  Write-Host '  사용할 수 있는 포트를 찾지 못했습니다 (8123-8143).' -ForegroundColor Red
+  return
 }
 
 $url = "http://127.0.0.1:$port/" + [uri]::EscapeDataString($target.Name)
 Write-Host ''
-Write-Host '  엑셀 편집기 로컬 서버가 시작됐습니다.' -ForegroundColor Cyan
+Write-Host '  서버가 시작됐습니다.' -ForegroundColor Cyan
 Write-Host "  주소 : $url"
-Write-Host "  폴더 : $root"
 Write-Host ''
 Write-Host '  * 브라우저가 자동으로 열립니다. Chrome 또는 Edge 로 여세요.'
-Write-Host '  * 편집이 끝나면 이 검은 창을 닫으면 서버가 종료됩니다.'
+Write-Host '  * 편집이 끝나면 이 창을 닫으면 서버가 종료됩니다.'
 Write-Host ''
 try { Start-Process $url } catch { Write-Host '  브라우저를 자동으로 열지 못했습니다. 위 주소를 직접 붙여넣으세요.' }
 
