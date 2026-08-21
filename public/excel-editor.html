@@ -1,0 +1,516 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>엑셀 편집기 · 원본 파일에 그대로 저장</title>
+<style>
+  :root {
+    --bg: #f6f7f9;
+    --panel: #ffffff;
+    --border: #d8dce2;
+    --border-strong: #b9c0c9;
+    --text: #1b1f24;
+    --muted: #6b7480;
+    --accent: #1a6dd4;
+    --accent-text: #ffffff;
+    --head-bg: #eef1f5;
+    --dirty: #fff4d6;
+    --dirty-mark: #d29b00;
+    --formula: #0a7a5a;
+    --danger: #b3261e;
+    --ok: #146c43;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #16191d; --panel: #1e2227; --border: #333a42; --border-strong: #4a535d;
+      --text: #e6e9ed; --muted: #9aa4b0; --accent: #4f9bff; --accent-text: #0b1017;
+      --head-bg: #262b31; --dirty: #3d3417; --dirty-mark: #e0b23c;
+      --formula: #4fd1a5; --danger: #ff7b72; --ok: #59d18b;
+    }
+  }
+  * { box-sizing: border-box; }
+  html, body { height: 100%; }
+  body {
+    margin: 0; background: var(--bg); color: var(--text);
+    font: 14px/1.5 system-ui, -apple-system, "Segoe UI", "Apple SD Gothic Neo", "Malgun Gothic", sans-serif;
+    display: flex; flex-direction: column;
+  }
+  header {
+    display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
+    padding: 10px 14px; background: var(--panel); border-bottom: 1px solid var(--border);
+  }
+  h1 { font-size: 15px; margin: 0 8px 0 0; font-weight: 650; white-space: nowrap; }
+  button {
+    font: inherit; padding: 6px 12px; border-radius: 6px; border: 1px solid var(--border-strong);
+    background: var(--panel); color: var(--text); cursor: pointer;
+  }
+  button:hover:not(:disabled) { border-color: var(--accent); }
+  button:disabled { opacity: .45; cursor: default; }
+  button.primary { background: var(--accent); border-color: var(--accent); color: var(--accent-text); font-weight: 600; }
+  .spacer { flex: 1; }
+  .filename { font-weight: 600; max-width: 40vw; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .badge {
+    font-size: 12px; padding: 2px 8px; border-radius: 999px;
+    background: var(--dirty); color: var(--dirty-mark); border: 1px solid var(--dirty-mark);
+  }
+  #status { font-size: 13px; color: var(--muted); }
+  #status.error { color: var(--danger); }
+  #status.ok { color: var(--ok); }
+
+  #tabs { display: flex; gap: 4px; padding: 8px 14px 0; overflow-x: auto; }
+  #tabs button {
+    border-bottom-left-radius: 0; border-bottom-right-radius: 0; white-space: nowrap;
+  }
+  #tabs button[aria-selected="true"] { background: var(--head-bg); border-color: var(--accent); font-weight: 650; }
+
+  #cellbar {
+    display: flex; align-items: center; gap: 8px; padding: 8px 14px;
+    border-bottom: 1px solid var(--border); background: var(--panel);
+  }
+  #cellref {
+    min-width: 64px; text-align: center; font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+    border: 1px solid var(--border); border-radius: 5px; padding: 4px 6px; color: var(--muted);
+  }
+  #cellinfo { font-size: 13px; color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+  #grid-wrap { flex: 1; overflow: auto; padding: 0 14px 14px; }
+  table { border-collapse: separate; border-spacing: 0; font-variant-numeric: tabular-nums; }
+  th, td { border-right: 1px solid var(--border); border-bottom: 1px solid var(--border); }
+  thead th {
+    position: sticky; top: 0; z-index: 3; background: var(--head-bg); color: var(--muted);
+    font-weight: 600; font-size: 12px; padding: 5px 6px; min-width: 90px; border-top: 1px solid var(--border);
+  }
+  thead th:first-child, tbody th {
+    position: sticky; left: 0; z-index: 2; background: var(--head-bg); color: var(--muted);
+    font-weight: 600; font-size: 12px; min-width: 46px; padding: 4px 6px; text-align: center;
+    border-left: 1px solid var(--border);
+  }
+  thead th:first-child { z-index: 4; }
+  td {
+    background: var(--panel); padding: 4px 7px; min-width: 90px; max-width: 320px;
+    white-space: pre; overflow: hidden; text-overflow: ellipsis; outline: none;
+  }
+  td:focus { box-shadow: inset 0 0 0 2px var(--accent); overflow: visible; white-space: pre-wrap; }
+  td.num { text-align: right; }
+  td.formula { color: var(--formula); }
+  td.edited { background: var(--dirty); }
+  #more { margin: 12px auto; display: block; }
+
+  .intro { max-width: 640px; margin: 48px auto; padding: 0 20px; color: var(--muted); }
+  .intro h2 { color: var(--text); font-size: 16px; }
+  .intro ol { padding-left: 20px; }
+  .intro code { background: var(--head-bg); padding: 1px 5px; border-radius: 4px; }
+  .warn {
+    margin: 10px 14px 0; padding: 10px 12px; border-radius: 6px;
+    border: 1px solid var(--dirty-mark); background: var(--dirty); color: var(--text); font-size: 13px;
+  }
+  .hidden { display: none !important; }
+</style>
+</head>
+<body>
+
+<header>
+  <h1>엑셀 편집기</h1>
+  <button id="open" class="primary">엑셀 파일 열기…</button>
+  <span class="filename" id="filename"></span>
+  <span class="badge hidden" id="dirty">저장 안 됨</span>
+  <span class="spacer"></span>
+  <span id="status"></span>
+  <button id="revert" disabled>변경 취소</button>
+  <button id="save" class="primary" disabled>저장 (Ctrl+S)</button>
+</header>
+
+<div id="fallback-warn" class="warn hidden">
+  이 브라우저는 <b>파일 시스템 접근 API</b>를 지원하지 않아 원본 파일에 직접 덮어쓸 수 없습니다.
+  [저장]을 누르면 수정본이 <b>다운로드</b>됩니다. 원본 파일에 바로 저장하려면 Chrome 또는 Edge(데스크톱)를 사용하세요.
+</div>
+
+<div id="app" class="hidden">
+  <div id="tabs" role="tablist"></div>
+  <div id="cellbar">
+    <span id="cellref">–</span>
+    <span id="cellinfo">셀을 클릭해 값을 입력하세요. <code>=</code> 로 시작하면 수식으로 저장됩니다.</span>
+  </div>
+  <div id="grid-wrap"><div id="grid"></div></div>
+</div>
+
+<div class="intro" id="intro">
+  <h2>원본 엑셀 파일을 열고, 고치고, 같은 파일에 그대로 저장합니다.</h2>
+  <ol>
+    <li><b>엑셀 파일 열기</b>로 <code>.xlsx</code> / <code>.xlsm</code> 파일을 하나 고릅니다.</li>
+    <li>표의 셀을 클릭해 값을 수정합니다. 바뀐 셀은 노란색으로 표시됩니다.</li>
+    <li><b>저장</b>을 누르면 <b>처음에 고른 그 파일</b>에 바로 덮어써집니다. 파일을 다시 고르거나 다운로드할 필요가 없습니다.</li>
+  </ol>
+  <p>
+    수정하지 않은 부분은 원본 XML 그대로 다시 저장하기 때문에 셀 서식, 수식, 차트, 조건부 서식, 시트 보호 등이
+    그대로 유지됩니다. 편집한 셀만 바뀝니다.
+  </p>
+  <p><small>Chrome · Edge 등 파일 시스템 접근 API를 지원하는 데스크톱 브라우저가 필요합니다. 파일은 브라우저 안에서만 처리되며 어디에도 업로드되지 않습니다.</small></p>
+</div>
+
+<script src="./vendor/fflate.min.js"></script>
+<script src="./vendor/xlsx-core.js"></script>
+<script>
+(function () {
+  'use strict';
+
+  var SPARE_ROWS = 20, SPARE_COLS = 3, PAGE_ROWS = 300;
+
+  var el = function (id) { return document.getElementById(id); };
+  var supported = typeof window.showOpenFilePicker === 'function';
+
+  var fileHandle = null;   // 처음 고른 파일에 대한 쓰기 핸들 — 저장할 때 재사용한다
+  var fallbackFile = null; // API 미지원 브라우저용
+  var wb = null;
+  var activeSheet = 0;
+  var visibleRows = PAGE_ROWS;
+  var edits = new Map();   // "sheet:row:col" -> 입력한 문자열
+
+  if (!supported) el('fallback-warn').classList.remove('hidden');
+
+  /* ------------------------------------------------------------- 상태 표시 */
+
+  function setStatus(msg, kind) {
+    var s = el('status');
+    s.textContent = msg || '';
+    s.className = kind || '';
+  }
+  function refreshDirty() {
+    var n = edits.size;
+    el('dirty').classList.toggle('hidden', n === 0);
+    el('dirty').textContent = n + '개 셀 수정됨 · 저장 안 됨';
+    el('save').disabled = !wb || n === 0;
+    el('revert').disabled = n === 0;
+  }
+
+  /* ------------------------------------------------------------- 파일 열기 */
+
+  el('open').addEventListener('click', function () {
+    if (!confirmDiscard()) return;
+    supported ? openWithPicker() : openWithInput();
+  });
+
+  function openWithPicker() {
+    window.showOpenFilePicker({
+      types: [{ description: 'Excel 통합 문서', accept: { 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet': ['.xlsx', '.xlsm'] } }],
+      multiple: false
+    }).then(function (handles) {
+      fileHandle = handles[0];
+      return fileHandle.getFile();
+    }).then(loadFile).catch(function (err) {
+      if (err && err.name === 'AbortError') return; // 사용자가 취소함
+      setStatus('열기 실패: ' + (err && err.message ? err.message : err), 'error');
+    });
+  }
+
+  function openWithInput() {
+    var input = document.createElement('input');
+    input.type = 'file';
+    input.accept = '.xlsx,.xlsm';
+    input.addEventListener('change', function () {
+      if (input.files && input.files[0]) { fallbackFile = input.files[0]; loadFile(fallbackFile); }
+    });
+    input.click();
+  }
+
+  function loadFile(file) {
+    setStatus('불러오는 중…');
+    return file.arrayBuffer().then(function (buf) {
+      try {
+        wb = XlsxCore.parseWorkbook(new Uint8Array(buf));
+      } catch (e) {
+        setStatus('읽을 수 없는 파일입니다: ' + e.message, 'error');
+        wb = null; el('app').classList.add('hidden'); el('intro').classList.remove('hidden');
+        return;
+      }
+      el('filename').textContent = file.name;
+      activeSheet = 0; visibleRows = PAGE_ROWS; edits.clear();
+      el('intro').classList.add('hidden');
+      el('app').classList.remove('hidden');
+      renderTabs(); renderGrid(); refreshDirty();
+      setStatus(supported ? '이 파일에 바로 저장됩니다.' : '수정 후 [저장]을 누르면 내려받습니다.', 'ok');
+    });
+  }
+
+  /* ------------------------------------------------------------- 화면 그리기 */
+
+  function renderTabs() {
+    var tabs = el('tabs');
+    tabs.textContent = '';
+    wb.sheets.forEach(function (sheet, i) {
+      var b = document.createElement('button');
+      b.textContent = sheet.name + (sheet.state !== 'visible' ? ' (숨김)' : '');
+      b.setAttribute('role', 'tab');
+      b.setAttribute('aria-selected', String(i === activeSheet));
+      b.addEventListener('click', function () {
+        activeSheet = i; visibleRows = PAGE_ROWS;
+        renderTabs(); renderGrid();
+      });
+      tabs.appendChild(b);
+    });
+  }
+
+  // 셀 편집 시 보여줄 원본 문자열: 수식 셀은 "=수식", 그 외는 표시값
+  function sourceText(cell) {
+    if (!cell) return '';
+    return cell.formula ? '=' + cell.formula : cell.text;
+  }
+  function editKey(row, col) { return activeSheet + ':' + row + ':' + col; }
+
+  function renderGrid() {
+    var sheet = wb.sheets[activeSheet];
+    var totalRows = Math.max(sheet.rowCount + SPARE_ROWS, 1);
+    var cols = Math.max(sheet.colCount + SPARE_COLS, 8);
+    var shownRows = Math.min(totalRows, visibleRows);
+
+    var table = document.createElement('table');
+    var thead = document.createElement('thead');
+    var hr = document.createElement('tr');
+    hr.appendChild(document.createElement('th'));
+    for (var c = 1; c <= cols; c++) {
+      var th = document.createElement('th');
+      th.textContent = XlsxCore.colToName(c);
+      hr.appendChild(th);
+    }
+    thead.appendChild(hr);
+    table.appendChild(thead);
+
+    var tbody = document.createElement('tbody');
+    for (var r = 1; r <= shownRows; r++) {
+      var tr = document.createElement('tr');
+      var rh = document.createElement('th');
+      rh.textContent = r;
+      tr.appendChild(rh);
+      for (var c2 = 1; c2 <= cols; c2++) {
+        tr.appendChild(makeCell(sheet, r, c2));
+      }
+      tbody.appendChild(tr);
+    }
+    table.appendChild(tbody);
+
+    var grid = el('grid');
+    grid.textContent = '';
+    grid.appendChild(table);
+
+    if (shownRows < totalRows) {
+      var more = document.createElement('button');
+      more.id = 'more';
+      more.textContent = '행 ' + PAGE_ROWS + '개 더 보기 (' + shownRows + ' / ' + totalRows + ')';
+      more.addEventListener('click', function () { visibleRows += PAGE_ROWS; renderGrid(); });
+      grid.appendChild(more);
+    }
+  }
+
+  function makeCell(sheet, row, col) {
+    var td = document.createElement('td');
+    var cell = sheet.cells[row + ',' + col] || null;
+    var key = editKey(row, col);
+    var edited = edits.has(key);
+
+    td.contentEditable = 'true';
+    td.spellcheck = false;
+    td.dataset.row = row;
+    td.dataset.col = col;
+    td.textContent = edited ? edits.get(key) : (cell ? cell.text : '');
+
+    if (edited) td.classList.add('edited');
+    if (!edited && cell) {
+      if (cell.formula) td.classList.add('formula');
+      else if (typeof cell.value === 'number' && !cell.isDate) td.classList.add('num');
+    }
+    return td;
+  }
+
+  /* --------------------------------------------------------------- 셀 편집 */
+
+  var gridEl = el('grid');
+
+  gridEl.addEventListener('focusin', function (e) {
+    var td = e.target.closest && e.target.closest('td');
+    if (!td) return;
+    var row = +td.dataset.row, col = +td.dataset.col;
+    var cell = wb.sheets[activeSheet].cells[row + ',' + col] || null;
+    el('cellref').textContent = XlsxCore.makeRef(row, col);
+    el('cellinfo').textContent = cell && cell.formula
+      ? '수식 셀입니다. 값을 직접 입력하면 수식이 사라집니다.'
+      : (cell && cell.isDate ? '날짜 셀입니다. YYYY-MM-DD 형식으로 입력하세요.' : '');
+    // 엑셀처럼, 편집을 시작하면 결과값 대신 수식 자체를 보여준다.
+    if (cell && cell.formula && !edits.has(editKey(row, col))) {
+      td.textContent = '=' + cell.formula;
+    }
+  });
+
+  gridEl.addEventListener('focusout', function (e) {
+    var td = e.target.closest && e.target.closest('td');
+    if (!td) return;
+    commitCell(td);
+    el('cellref').textContent = '–';
+  });
+
+  gridEl.addEventListener('input', function (e) {
+    var td = e.target.closest && e.target.closest('td');
+    if (td) trackCell(td);
+  });
+
+  gridEl.addEventListener('paste', function (e) {
+    // 서식 있는 붙여넣기가 셀 안에 HTML 을 남기지 않도록 평문만 받는다.
+    var td = e.target.closest && e.target.closest('td');
+    if (!td) return;
+    e.preventDefault();
+    var text = (e.clipboardData || window.clipboardData).getData('text').replace(/[\r\n\t]+/g, ' ');
+    document.execCommand('insertText', false, text);
+  });
+
+  gridEl.addEventListener('keydown', function (e) {
+    var td = e.target.closest && e.target.closest('td');
+    if (!td) return;
+    if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); move(td, 1, 0); }
+    else if (e.key === 'Escape') {
+      e.preventDefault();
+      var row = +td.dataset.row, col = +td.dataset.col;
+      var cell = wb.sheets[activeSheet].cells[row + ',' + col] || null;
+      edits.delete(editKey(row, col));
+      td.textContent = sourceText(cell);
+      td.classList.remove('edited');
+      refreshDirty();
+      td.blur();
+    }
+    else if (e.key === 'ArrowUp' && !e.shiftKey) { e.preventDefault(); move(td, -1, 0); }
+    else if (e.key === 'ArrowDown' && !e.shiftKey) { e.preventDefault(); move(td, 1, 0); }
+  });
+
+  function move(td, dr, dc) {
+    var row = +td.dataset.row + dr, col = +td.dataset.col + dc;
+    var next = gridEl.querySelector('td[data-row="' + row + '"][data-col="' + col + '"]');
+    if (next) next.focus();
+  }
+
+  function trackCell(td) {
+    var row = +td.dataset.row, col = +td.dataset.col;
+    var cell = wb.sheets[activeSheet].cells[row + ',' + col] || null;
+    var text = td.textContent;
+    var key = editKey(row, col);
+    if (text === sourceText(cell)) edits.delete(key);
+    else edits.set(key, text);
+    td.classList.toggle('edited', edits.has(key));
+    refreshDirty();
+  }
+
+  function commitCell(td) {
+    trackCell(td);
+    var row = +td.dataset.row, col = +td.dataset.col;
+    var key = editKey(row, col);
+    if (!edits.has(key)) {
+      // 원래 값으로 되돌아왔다 — 수식 셀이면 다시 결과값을 보여준다.
+      var cell = wb.sheets[activeSheet].cells[row + ',' + col] || null;
+      td.textContent = cell ? cell.text : '';
+    }
+  }
+
+  /* --------------------------------------------------------------- 되돌리기 */
+
+  el('revert').addEventListener('click', function () {
+    if (!edits.size) return;
+    if (!window.confirm('저장하지 않은 수정 ' + edits.size + '건을 모두 취소할까요?')) return;
+    edits.clear();
+    renderGrid(); refreshDirty();
+    setStatus('수정 사항을 취소했습니다.');
+  });
+
+  /* ------------------------------------------------------------------ 저장 */
+
+  el('save').addEventListener('click', save);
+
+  document.addEventListener('keydown', function (e) {
+    if ((e.ctrlKey || e.metaKey) && (e.key === 's' || e.key === 'S')) {
+      e.preventDefault();
+      if (!el('save').disabled) save();
+    }
+  });
+
+  function save() {
+    if (!wb || !edits.size) return;
+    var active = document.activeElement;
+    if (active && active.tagName === 'TD') { commitCell(active); active.blur(); }
+    if (!edits.size) return;
+
+    var list = [];
+    edits.forEach(function (text, key) {
+      var p = key.split(':');
+      list.push({ sheet: +p[0], row: +p[1], col: +p[2], text: text });
+    });
+
+    el('save').disabled = true;
+    setStatus('저장 중…');
+
+    var bytes;
+    try {
+      bytes = XlsxCore.writeWorkbook(wb, list);
+    } catch (e) {
+      setStatus('저장 실패(파일 생성 오류): ' + e.message, 'error');
+      refreshDirty();
+      return;
+    }
+
+    writeBytes(bytes).then(function (mode) {
+      // 저장된 결과를 다시 읽어 화면과 파일 내용을 일치시킨다.
+      wb = XlsxCore.parseWorkbook(bytes);
+      edits.clear();
+      renderTabs(); renderGrid(); refreshDirty();
+      setStatus(mode === 'download'
+        ? '수정본을 내려받았습니다.'
+        : '저장했습니다 · ' + new Date().toLocaleTimeString('ko-KR'), 'ok');
+    }).catch(function (err) {
+      if (err && err.name === 'AbortError') { setStatus('저장이 취소되었습니다.'); refreshDirty(); return; }
+      setStatus('저장 실패: ' + (err && err.message ? err.message : err), 'error');
+      refreshDirty();
+    });
+  }
+
+  function writeBytes(bytes) {
+    if (fileHandle) {
+      // 처음 고른 파일 핸들을 그대로 사용한다 — 파일 선택 창이 뜨지 않는다.
+      return ensurePermission(fileHandle).then(function () {
+        return fileHandle.createWritable();
+      }).then(function (writable) {
+        return writable.write(bytes).then(function () { return writable.close(); });
+      }).then(function () { return 'file'; });
+    }
+    // 파일 시스템 접근 API 미지원 — 내려받기로 대체
+    var name = (fallbackFile && fallbackFile.name) || 'edited.xlsx';
+    var blob = new Blob([bytes], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
+    var url = URL.createObjectURL(blob);
+    var a = document.createElement('a');
+    a.href = url; a.download = name;
+    document.body.appendChild(a); a.click(); a.remove();
+    setTimeout(function () { URL.revokeObjectURL(url); }, 1000);
+    return Promise.resolve('download');
+  }
+
+  function ensurePermission(handle) {
+    if (!handle.queryPermission) return Promise.resolve();
+    return handle.queryPermission({ mode: 'readwrite' }).then(function (state) {
+      if (state === 'granted') return;
+      return handle.requestPermission({ mode: 'readwrite' }).then(function (s) {
+        if (s !== 'granted') throw new Error('파일 쓰기 권한이 거부되었습니다.');
+      });
+    });
+  }
+
+  /* ------------------------------------------------------- 실수 방지 장치 */
+
+  function confirmDiscard() {
+    if (!edits.size) return true;
+    return window.confirm('저장하지 않은 수정 ' + edits.size + '건이 있습니다. 버리고 다른 파일을 열까요?');
+  }
+
+  window.addEventListener('beforeunload', function (e) {
+    if (!edits.size) return;
+    e.preventDefault();
+    e.returnValue = '';
+  });
+})();
+</script>
+</body>
+</html>
