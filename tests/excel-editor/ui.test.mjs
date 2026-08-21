@@ -4,7 +4,7 @@ import * as fflate from 'fflate';
 import XLSX from 'xlsx';
 import path from 'path';
 import { fileURLToPath } from 'url';
-import { makeFixture } from './fixture.mjs';
+import { makeFixture, makeBigFixture } from './fixture.mjs';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..');
 const CHROME = process.env.CHROMIUM_PATH || undefined;
@@ -139,6 +139,113 @@ await page.click('#tabs button:nth-child(2)');
 ok(await cellText(2, 1) === '건드리지 않는 시트', '두 번째 시트 표시');
 await page.click('#tabs button:nth-child(1)');
 ok(await cellText(2, 2) === '99', '첫 시트로 복귀');
+
+console.log('\n[UI-6] 원본 덮어쓰기가 거부됐을 때 복구');
+{
+  const p2 = await browser.newPage();
+  await p2.addInitScript(({ b64 }) => {
+    const bin = Uint8Array.from(atob(b64), c => c.charCodeAt(0));
+    window.__disk = bin;
+    window.__savedAs = null;
+    const denied = {
+      name: '발주서.xlsx',
+      getFile: async () => new File([window.__disk], '발주서.xlsx'),
+      queryPermission: async () => 'prompt',
+      // 권한이 없는 상황을 재현한다 (사용자가 겪은 오류와 같은 계열)
+      createWritable: async () => { const e = new Error('write permission denied'); e.name = 'NotAllowedError'; throw e; }
+    };
+    window.showOpenFilePicker = async () => [denied];
+    window.showSaveFilePicker = async () => ({
+      name: '발주서-사본.xlsx',
+      createWritable: async () => {
+        const chunks = [];
+        return {
+          write: async d => { chunks.push(d); },
+          close: async () => {
+            const total = chunks.reduce((n, c) => n + c.length, 0);
+            const out = new Uint8Array(total);
+            let o = 0; for (const c of chunks) { out.set(c, o); o += c.length; }
+            window.__savedAs = out;
+          }
+        };
+      }
+    });
+  }, { b64 });
+  await p2.goto(`http://127.0.0.1:${PORT}/excel-editor.html`);
+  await p2.click('#open');
+  await p2.waitForSelector('#app:not(.hidden)');
+  await p2.click('td[data-row="2"][data-col="2"]');
+  await p2.keyboard.press('Control+A');
+  await p2.keyboard.type('42');
+  await p2.keyboard.press('Enter');
+  await p2.click('#save');
+  await p2.waitForSelector('#recovery:not(.hidden)');
+  const st = await p2.textContent('#status');
+  ok(st.includes('권한'), '권한 오류를 사람 말로 설명: ' + st);
+  ok(await p2.isVisible('#save-as'), '[위치를 골라 저장…] 버튼 노출');
+  ok(await p2.isVisible('#download'), '[수정본 내려받기] 버튼 노출');
+  ok((await p2.textContent('#dirty')).includes('1개 셀'), '실패 후에도 수정 내용 유지 (유실 없음)');
+
+  await p2.click('#save-as');
+  await p2.waitForFunction(() => window.__savedAs !== null);
+  const alt = new Uint8Array(Buffer.from(await p2.evaluate(() => Array.from(window.__savedAs))));
+  ok(XLSX.read(alt, { type: 'array' }).Sheets['발주']['B2'].v === 42, '고른 위치에 저장된 파일에 수정 반영');
+  ok((await p2.getAttribute('#recovery', 'class')).includes('hidden'), '저장 후 복구 버튼 사라짐');
+  ok((await p2.textContent('#status')).startsWith('저장했습니다'), '저장 완료 표시');
+  ok(await p2.textContent('#filename') === '발주서-사본.xlsx', '이후 저장 대상이 새 파일로 바뀜');
+  await p2.close();
+}
+
+console.log('\n[UI-7] 권한 요청 시점 (큰 파일 회귀)');
+{
+  const bigB64 = Buffer.from(makeBigFixture()).toString('base64');
+  const p3 = await browser.newPage();
+  await p3.addInitScript(({ b64 }) => {
+    const bin = Uint8Array.from(atob(b64), c => c.charCodeAt(0));
+    window.__disk = bin;
+    window.__marks = {};
+    const handle = {
+      name: 'big.xlsx',
+      getFile: async () => new File([window.__disk], 'big.xlsx'),
+      queryPermission: async () => 'granted',
+      createWritable: async () => {
+        window.__marks.created = performance.now();
+        return {
+          write: async d => { window.__marks.wrote = performance.now(); window.__disk = d; },
+          close: async () => { window.__marks.closed = performance.now(); }
+        };
+      }
+    };
+    window.showOpenFilePicker = async () => [handle];
+  }, { b64: bigB64 });
+  await p3.goto(`http://127.0.0.1:${PORT}/excel-editor.html`);
+  await p3.click('#open');
+  await p3.waitForSelector('#app:not(.hidden)');
+  await p3.click('td[data-row="2"][data-col="2"]');
+  await p3.keyboard.press('Control+A');
+  await p3.keyboard.type('12345');
+  await p3.keyboard.press('Enter');
+  await p3.click('#save');
+  await p3.waitForFunction(() => window.__marks.closed);
+  const marks = await p3.evaluate(() => window.__marks);
+  const gap = marks.wrote - marks.created;
+  ok(gap > 5, '압축보다 쓰기 스트림 열기가 먼저 (간격 ' + gap.toFixed(0) + 'ms) — 제스처 만료 방지');
+  const big = new Uint8Array(Buffer.from(await p3.evaluate(() => Array.from(window.__disk))));
+  ok(XLSX.read(big, { type: 'array' }).Sheets['데이터']['B2'].v === 12345, '큰 파일도 정상 저장');
+  await p3.close();
+}
+
+console.log('\n[UI-8] iframe 안에서는 미리 경고');
+{
+  const p4 = await browser.newPage();
+  await p4.goto(`http://127.0.0.1:${PORT}/`);
+  await p4.setContent(`<iframe src="http://127.0.0.1:${PORT}/excel-editor.html" style="width:900px;height:600px"></iframe>`);
+  const frame = await (await p4.waitForSelector('iframe')).contentFrame();
+  await frame.waitForSelector('#context-warn:not(.hidden)');
+  const warn = await frame.textContent('#context-warn');
+  ok(warn.includes('새 탭'), 'iframe 경고 노출: ' + warn.trim().slice(0, 40) + '…');
+  await p4.close();
+}
 
 ok(errors.length === 0, '자바스크립트 오류 없음' + (errors.length ? ': ' + errors.join(' | ') : ''));
 

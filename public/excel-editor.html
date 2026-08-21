@@ -117,6 +117,10 @@
   <span class="badge hidden" id="dirty">저장 안 됨</span>
   <span class="spacer"></span>
   <span id="status"></span>
+  <span id="recovery" class="hidden">
+    <button id="save-as">위치를 골라 저장…</button>
+    <button id="download">수정본 내려받기</button>
+  </span>
   <button id="revert" disabled>변경 취소</button>
   <button id="save" class="primary" disabled>저장 (Ctrl+S)</button>
 </header>
@@ -125,6 +129,8 @@
   이 브라우저는 <b>파일 시스템 접근 API</b>를 지원하지 않아 원본 파일에 직접 덮어쓸 수 없습니다.
   [저장]을 누르면 수정본이 <b>다운로드</b>됩니다. 원본 파일에 바로 저장하려면 Chrome 또는 Edge(데스크톱)를 사용하세요.
 </div>
+
+<div id="context-warn" class="warn hidden"></div>
 
 <div id="app" class="hidden">
   <div id="tabs" role="tablist"></div>
@@ -168,6 +174,29 @@
   var edits = new Map();   // "sheet:row:col" -> 입력한 문자열
 
   if (!supported) el('fallback-warn').classList.remove('hidden');
+  else checkContext();
+
+  // 파일 쓰기 권한은 최상위 창에서만, 그리고 사용자 조작 직후에만 요청할 수 있다.
+  // 미리 걸러서 저장 단계에서 당황하지 않도록 안내한다.
+  function checkContext() {
+    var framed = false;
+    try { framed = window.top !== window.self; } catch (e) { framed = true; }
+    var msg = '';
+    if (framed) {
+      msg = '이 페이지가 <b>다른 페이지 안(iframe · 미리보기 창)</b>에 들어가 있습니다. ' +
+            '이런 곳에서는 브라우저가 파일 쓰기 권한을 주지 않습니다. ' +
+            '<b>새 탭에서 이 파일을 직접 열어</b> 주세요.';
+    } else if (location.protocol === 'file:') {
+      msg = 'HTML 파일을 <code>file://</code> 로 직접 열었습니다. 대부분 잘 동작하지만, ' +
+            '브라우저·버전에 따라 원본 파일 저장이 막힐 수 있습니다. 저장이 안 되면 ' +
+            '이 파일이 있는 폴더에서 <code>python3 -m http.server</code> 를 실행하고 ' +
+            '<code>http://localhost:8000/</code> 으로 열어 보세요.';
+    }
+    if (msg) {
+      el('context-warn').innerHTML = msg;
+      el('context-warn').classList.remove('hidden');
+    }
+  }
 
   /* ------------------------------------------------------------- 상태 표시 */
 
@@ -230,6 +259,7 @@
       el('app').classList.remove('hidden');
       renderTabs(); renderGrid(); refreshDirty();
       setStatus(supported ? '이 파일에 바로 저장됩니다.' : '수정 후 [저장]을 누르면 내려받습니다.', 'ok');
+      pendingBytes = null; hideRecovery();
     });
   }
 
@@ -420,7 +450,15 @@
 
   /* ------------------------------------------------------------------ 저장 */
 
+  var pendingBytes = null;   // 저장에 실패했을 때 되살릴 수 있도록 들고 있는 결과물
+
   el('save').addEventListener('click', save);
+  el('download').addEventListener('click', function () {
+    if (!pendingBytes) return;
+    downloadBytes(pendingBytes);
+    finishSave('download');
+  });
+  el('save-as').addEventListener('click', saveAs);
 
   document.addEventListener('keydown', function (e) {
     if ((e.ctrlKey || e.metaKey) && (e.key === 's' || e.key === 'S')) {
@@ -442,60 +480,130 @@
     });
 
     el('save').disabled = true;
+    hideRecovery();
     setStatus('저장 중…');
+
+    // 순서가 중요하다. 쓰기 권한 요청은 "사용자 조작 직후"에만 허용되는데,
+    // 압축(writeWorkbook)을 먼저 하면 큰 파일에서는 그 유효 시간이 지나 버려
+    // 권한 요청이 거부된다. 그래서 스트림부터 열고 압축은 그 다음에 한다.
+    var writablePromise = null;
+    if (fileHandle) {
+      try {
+        writablePromise = fileHandle.createWritable();
+        writablePromise.catch(function () {});   // 아래에서 따로 처리한다
+      } catch (e) {
+        writablePromise = Promise.reject(e);
+      }
+    }
 
     var bytes;
     try {
       bytes = XlsxCore.writeWorkbook(wb, list);
     } catch (e) {
+      discard(writablePromise);
       setStatus('저장 실패(파일 생성 오류): ' + e.message, 'error');
       refreshDirty();
       return;
     }
+    pendingBytes = bytes;
 
-    writeBytes(bytes).then(function (mode) {
-      // 저장된 결과를 다시 읽어 화면과 파일 내용을 일치시킨다.
-      wb = XlsxCore.parseWorkbook(bytes);
-      edits.clear();
-      renderTabs(); renderGrid(); refreshDirty();
-      setStatus(mode === 'download'
-        ? '수정본을 내려받았습니다.'
-        : '저장했습니다 · ' + new Date().toLocaleTimeString('ko-KR'), 'ok');
+    if (!writablePromise) {                       // 파일 시스템 접근 API 미지원 브라우저
+      downloadBytes(bytes);
+      finishSave('download');
+      return;
+    }
+
+    writablePromise.then(function (writable) {
+      return writable.write(bytes)
+        .then(function () { return writable.close(); })
+        .catch(function (err) {
+          try { if (writable.abort) writable.abort(); } catch (e2) {}
+          throw err;
+        });
+    }).then(function () {
+      finishSave('file');
     }).catch(function (err) {
-      if (err && err.name === 'AbortError') { setStatus('저장이 취소되었습니다.'); refreshDirty(); return; }
-      setStatus('저장 실패: ' + (err && err.message ? err.message : err), 'error');
-      refreshDirty();
+      onSaveError(err);
     });
   }
 
-  function writeBytes(bytes) {
-    if (fileHandle) {
-      // 처음 고른 파일 핸들을 그대로 사용한다 — 파일 선택 창이 뜨지 않는다.
-      return ensurePermission(fileHandle).then(function () {
-        return fileHandle.createWritable();
-      }).then(function (writable) {
-        return writable.write(bytes).then(function () { return writable.close(); });
-      }).then(function () { return 'file'; });
-    }
-    // 파일 시스템 접근 API 미지원 — 내려받기로 대체
-    var name = (fallbackFile && fallbackFile.name) || 'edited.xlsx';
+  function discard(writablePromise) {
+    if (!writablePromise) return;
+    writablePromise.then(function (w) { try { if (w.abort) w.abort(); } catch (e) {} }, function () {});
+  }
+
+  // 원본 덮어쓰기가 막혔을 때: 위치를 골라 저장한다.
+  // 같은 파일을 다시 고르면 그 뒤로는 [저장]만 눌러도 그 파일에 바로 써진다.
+  function saveAs() {
+    if (!pendingBytes || typeof window.showSaveFilePicker !== 'function') return;
+    var name = el('filename').textContent || 'edited.xlsx';
+    window.showSaveFilePicker({
+      suggestedName: name,
+      types: [{ description: 'Excel 통합 문서', accept: { 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet': ['.xlsx', '.xlsm'] } }]
+    }).then(function (handle) {
+      return handle.createWritable().then(function (writable) {
+        return writable.write(pendingBytes).then(function () { return writable.close(); });
+      }).then(function () {
+        fileHandle = handle;                 // 이후 저장은 이 파일에 바로
+        el('filename').textContent = handle.name || name;
+        finishSave('file');
+      });
+    }).catch(function (err) {
+      if (err && err.name === 'AbortError') { setStatus('저장이 취소되었습니다.'); return; }
+      onSaveError(err);
+    });
+  }
+
+  function downloadBytes(bytes) {
+    var name = el('filename').textContent || 'edited.xlsx';
     var blob = new Blob([bytes], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
     var url = URL.createObjectURL(blob);
     var a = document.createElement('a');
     a.href = url; a.download = name;
     document.body.appendChild(a); a.click(); a.remove();
     setTimeout(function () { URL.revokeObjectURL(url); }, 1000);
-    return Promise.resolve('download');
   }
 
-  function ensurePermission(handle) {
-    if (!handle.queryPermission) return Promise.resolve();
-    return handle.queryPermission({ mode: 'readwrite' }).then(function (state) {
-      if (state === 'granted') return;
-      return handle.requestPermission({ mode: 'readwrite' }).then(function (s) {
-        if (s !== 'granted') throw new Error('파일 쓰기 권한이 거부되었습니다.');
-      });
-    });
+  function finishSave(mode) {
+    // 저장된 결과를 다시 읽어 화면과 파일 내용을 일치시킨다.
+    wb = XlsxCore.parseWorkbook(pendingBytes);
+    pendingBytes = null;
+    edits.clear();
+    hideRecovery();
+    renderTabs(); renderGrid(); refreshDirty();
+    setStatus(mode === 'download'
+      ? '수정본을 내려받았습니다.'
+      : '저장했습니다 · ' + new Date().toLocaleTimeString('ko-KR'), 'ok');
+  }
+
+  function onSaveError(err) {
+    var name = err && err.name, text = (err && err.message) || String(err);
+    if (name === 'AbortError') {
+      setStatus('저장이 취소되었습니다.');
+      pendingBytes = null;
+      refreshDirty();
+      return;
+    }
+    var msg;
+    if (name === 'NotAllowedError' || name === 'SecurityError' || /permission/i.test(text)) {
+      msg = '브라우저가 이 파일에 쓸 권한을 주지 않았습니다. 아래 버튼으로 저장하세요.';
+    } else if (name === 'NoModificationAllowedError') {
+      msg = '파일이 다른 프로그램에서 열려 있습니다. Excel 에서 이 파일을 닫고 다시 저장해 보세요.';
+    } else {
+      msg = '저장 실패: ' + text;
+    }
+    setStatus(msg, 'error');
+    showRecovery();
+    refreshDirty();
+  }
+
+  function showRecovery() {
+    if (!pendingBytes) return;
+    el('save-as').classList.toggle('hidden', typeof window.showSaveFilePicker !== 'function');
+    el('recovery').classList.remove('hidden');
+  }
+  function hideRecovery() {
+    el('recovery').classList.add('hidden');
   }
 
   /* ------------------------------------------------------- 실수 방지 장치 */

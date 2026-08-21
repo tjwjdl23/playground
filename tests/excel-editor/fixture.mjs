@@ -23,3 +23,13 @@ export function makeFixture() {
   files['xl/media/image1.bin'] = fflate.strToU8('BINARY-BLOB-예제');
   return fflate.zipSync(files, { level: 6 });
 }
+
+/** 압축에 시간이 걸릴 만큼 큰 워크북 (권한 요청 시점 회귀 테스트용) */
+export function makeBigFixture() {
+  const rows = [['라벨', '값', '비고']];
+  for (let i = 1; i <= 6000; i++) rows.push(['항목-' + i, i * 3, '설명 텍스트 ' + i + ' 가나다라마바사']);
+  const ws = XLSX.utils.aoa_to_sheet(rows);
+  const wbf = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wbf, ws, '데이터');
+  return new Uint8Array(XLSX.write(wbf, { type: 'array', bookType: 'xlsx', bookSST: true }));
+}
