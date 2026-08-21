@@ -185,6 +185,13 @@ console.log('\n[UI-6] 원본 덮어쓰기가 거부됐을 때 복구');
   ok(await p2.isVisible('#save-as'), '[위치를 골라 저장…] 버튼 노출');
   ok(await p2.isVisible('#download'), '[수정본 내려받기] 버튼 노출');
   ok((await p2.textContent('#dirty')).includes('1개 셀'), '실패 후에도 수정 내용 유지 (유실 없음)');
+  const advice = await p2.textContent('#context-warn');
+  ok(advice.includes('원래 그 엑셀 파일을 다시 고르세요'), '즉시 해결 방법 안내');
+  ok(await p2.isVisible('#diag'), '진단 패널 노출');
+  await p2.click('#diag summary');
+  const diag = await p2.textContent('#diag-text');
+  ok(diag.includes('마지막 오류 : NotAllowedError'), '진단에 실제 오류 기록: ' + (diag.split('\n').find(l => l.startsWith('마지막 오류')) || ''));
+  ok(diag.includes('최상위 창'), '진단에 창/프로토콜 정보 포함');
 
   await p2.click('#save-as');
   await p2.waitForFunction(() => window.__savedAs !== null);

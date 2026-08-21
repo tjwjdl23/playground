@@ -105,6 +105,11 @@
     margin: 10px 14px 0; padding: 10px 12px; border-radius: 6px;
     border: 1px solid var(--dirty-mark); background: var(--dirty); color: var(--text); font-size: 13px;
   }
+  #diag summary { cursor: pointer; font-weight: 600; }
+  #diag pre {
+    margin: 8px 0; padding: 8px; border-radius: 5px; background: var(--panel);
+    border: 1px solid var(--border); font-size: 12px; overflow-x: auto; white-space: pre;
+  }
   .hidden { display: none !important; }
 </style>
 </head>
@@ -131,6 +136,12 @@
 </div>
 
 <div id="context-warn" class="warn hidden"></div>
+
+<details id="diag" class="warn hidden">
+  <summary>환경 진단 (저장이 안 될 때 확인 / 신고용)</summary>
+  <pre id="diag-text"></pre>
+  <button id="diag-copy">진단 정보 복사</button>
+</details>
 
 <div id="app" class="hidden">
   <div id="tabs" role="tablist"></div>
@@ -178,24 +189,30 @@
 
   // 파일 쓰기 권한은 최상위 창에서만, 그리고 사용자 조작 직후에만 요청할 수 있다.
   // 미리 걸러서 저장 단계에서 당황하지 않도록 안내한다.
+  function isFramed() {
+    try { return window.top !== window.self; } catch (e) { return true; }
+  }
+
+  var SERVE_TIP = '이 HTML 이 있는 폴더에서 <code>python3 -m http.server</code> 를 실행한 뒤 ' +
+                  '<code>http://localhost:8000/</code> 에서 여세요. ' +
+                  '(Node 가 있다면 <code>npx serve</code> 도 됩니다.)';
+
   function checkContext() {
-    var framed = false;
-    try { framed = window.top !== window.self; } catch (e) { framed = true; }
     var msg = '';
-    if (framed) {
+    if (isFramed()) {
       msg = '이 페이지가 <b>다른 페이지 안(iframe · 미리보기 창)</b>에 들어가 있습니다. ' +
             '이런 곳에서는 브라우저가 파일 쓰기 권한을 주지 않습니다. ' +
             '<b>새 탭에서 이 파일을 직접 열어</b> 주세요.';
     } else if (location.protocol === 'file:') {
-      msg = 'HTML 파일을 <code>file://</code> 로 직접 열었습니다. 대부분 잘 동작하지만, ' +
-            '브라우저·버전에 따라 원본 파일 저장이 막힐 수 있습니다. 저장이 안 되면 ' +
-            '이 파일이 있는 폴더에서 <code>python3 -m http.server</code> 를 실행하고 ' +
-            '<code>http://localhost:8000/</code> 으로 열어 보세요.';
+      msg = '<b><code>file://</code> 로 열면 원본 파일에 저장이 막히는 경우가 많습니다.</b> ' +
+            '브라우저가 이 주소에는 파일 쓰기 권한을 내주지 않기 때문입니다. ' + SERVE_TIP;
     }
-    if (msg) {
-      el('context-warn').innerHTML = msg;
-      el('context-warn').classList.remove('hidden');
-    }
+    if (msg) showContextWarn(msg);
+  }
+
+  function showContextWarn(html) {
+    el('context-warn').innerHTML = html;
+    el('context-warn').classList.remove('hidden');
   }
 
   /* ------------------------------------------------------------- 상태 표시 */
@@ -260,6 +277,7 @@
       renderTabs(); renderGrid(); refreshDirty();
       setStatus(supported ? '이 파일에 바로 저장됩니다.' : '수정 후 [저장]을 누르면 내려받습니다.', 'ok');
       pendingBytes = null; hideRecovery();
+      updateDiag(); el('diag').classList.remove('hidden');
     });
   }
 
@@ -584,16 +602,33 @@
       refreshDirty();
       return;
     }
-    var msg;
+    lastError = (name || 'Error') + ': ' + text;
+
+    var msg, advice;
     if (name === 'NotAllowedError' || name === 'SecurityError' || /permission/i.test(text)) {
-      msg = '브라우저가 이 파일에 쓸 권한을 주지 않았습니다. 아래 버튼으로 저장하세요.';
+      msg = '브라우저가 이 파일에 쓸 권한을 주지 않았습니다.';
+      advice = '<b>지금 바로 저장하려면</b> 위의 [위치를 골라 저장…] 을 누르고 <b>원래 그 엑셀 파일을 다시 고르세요.</b> ' +
+               '덮어쓰기가 되고, 그 뒤로는 [저장]만 눌러도 대화상자 없이 저장됩니다.<br><br><b>근본 원인</b>: ';
+      if (isFramed()) {
+        advice += '이 페이지가 iframe · 미리보기 창 안에 있습니다. 새 탭에서 직접 열면 해결됩니다.';
+      } else if (location.protocol === 'file:') {
+        advice += '<code>file://</code> 주소에는 브라우저가 파일 쓰기 권한을 주지 않습니다. ' + SERVE_TIP;
+      } else {
+        advice += '브라우저는 시스템 폴더나 일부 동기화 폴더(사용자 홈 최상위, Program Files, OneDrive 등) 안의 ' +
+                  '파일에는 쓰기를 막습니다. 엑셀 파일을 <b>문서 · 바탕화면</b> 같은 일반 폴더로 옮기고 다시 열어 보세요.';
+      }
     } else if (name === 'NoModificationAllowedError') {
-      msg = '파일이 다른 프로그램에서 열려 있습니다. Excel 에서 이 파일을 닫고 다시 저장해 보세요.';
+      msg = '파일이 다른 프로그램에서 열려 있습니다.';
+      advice = 'Excel 에서 이 파일을 닫고 [저장]을 다시 누르세요.';
     } else {
       msg = '저장 실패: ' + text;
+      advice = '아래 [수정본 내려받기] 로 수정 내용을 먼저 안전하게 보관하세요.';
     }
-    setStatus(msg, 'error');
+    setStatus(msg + ' 아래 버튼으로 저장하세요.', 'error');
+    showContextWarn(advice);
     showRecovery();
+    updateDiag();
+    el('diag').classList.remove('hidden');
     refreshDirty();
   }
 
@@ -605,6 +640,37 @@
   function hideRecovery() {
     el('recovery').classList.add('hidden');
   }
+
+  /* --------------------------------------------------------------- 진단 */
+
+  var lastError = '';
+
+  function updateDiag() {
+    var framed = isFramed();
+    var lines = [
+      '주소       : ' + location.href.slice(0, 120),
+      '프로토콜   : ' + location.protocol,
+      '최상위 창  : ' + (framed ? '아니오 (iframe 안 — 저장 불가)' : '예'),
+      '보안 컨텍스트: ' + (window.isSecureContext ? '예' : '아니오'),
+      '파일 열기 API : ' + (typeof window.showOpenFilePicker === 'function' ? '있음' : '없음'),
+      '파일 저장 API : ' + (typeof window.showSaveFilePicker === 'function' ? '있음' : '없음'),
+      '파일 핸들   : ' + (fileHandle ? '있음' : '없음'),
+      '마지막 오류 : ' + (lastError || '없음'),
+      'User-Agent : ' + navigator.userAgent
+    ];
+    el('diag-text').textContent = lines.join('\n');
+  }
+
+  el('diag').addEventListener('toggle', function () {
+    if (el('diag').open) updateDiag();
+  });
+
+  el('diag-copy').addEventListener('click', function () {
+    var text = el('diag-text').textContent;
+    var done = function () { el('diag-copy').textContent = '복사됨'; setTimeout(function () { el('diag-copy').textContent = '진단 정보 복사'; }, 1500); };
+    if (navigator.clipboard && navigator.clipboard.writeText) navigator.clipboard.writeText(text).then(done, done);
+    else done();
+  });
 
   /* ------------------------------------------------------- 실수 방지 장치 */
 
