@@ -1,0 +1,609 @@
+<html>
+<head>
+<meta http-equiv="X-UA-Compatible" content="IE=edge">
+<meta http-equiv="Content-Type" content="text/html; charset=utf-8">
+<title>엑셀 편집기 (오프라인)</title>
+<hta:application
+  id="excelEditorApp"
+  applicationname="ExcelEditor"
+  border="thin"
+  caption="yes"
+  maximizebutton="yes"
+  minimizebutton="yes"
+  scroll="no"
+  singleinstance="yes"
+  showintaskbar="yes"
+  windowstate="maximize" />
+<style>
+  /* IE 엔진에는 CSS 변수도 position:sticky 도 없다. 전부 고정값으로 쓴다. */
+  html, body { height: 100%; margin: 0; }
+  body {
+    background: #f6f7f9; color: #1b1f24; overflow: hidden;
+    font: 14px/1.5 "맑은 고딕", "Malgun Gothic", sans-serif;
+  }
+  #header {
+    padding: 8px 12px; background: #ffffff; border-bottom: 1px solid #d8dce2;
+  }
+  #header .row { margin: 3px 0; }
+  h1 { font-size: 15px; margin: 0 10px 0 0; font-weight: bold; display: inline; }
+  button {
+    font: inherit; padding: 5px 11px; border: 1px solid #b9c0c9; border-radius: 4px;
+    background: #ffffff; color: #1b1f24; cursor: pointer;
+  }
+  button.primary { background: #1a6dd4; border-color: #1a6dd4; color: #ffffff; font-weight: bold; }
+  button[disabled] { color: #9aa4b0; border-color: #d8dce2; background: #f3f4f6; cursor: default; }
+  input[type=text] {
+    font: 13px "맑은 고딕", "Malgun Gothic", sans-serif; padding: 5px 7px;
+    border: 1px solid #b9c0c9; border-radius: 4px; width: 620px;
+  }
+  .muted { color: #6b7480; font-size: 13px; }
+  #dirty {
+    font-size: 12px; padding: 2px 8px; border-radius: 9px; margin-left: 6px;
+    background: #fff4d6; color: #96700a; border: 1px solid #d29b00;
+  }
+  #status { font-size: 13px; margin-left: 8px; }
+  .st-ok { color: #146c43; }
+  .st-err { color: #b3261e; font-weight: bold; }
+  #tabs { padding: 6px 12px 0; background: #ffffff; }
+  #tabs button { border-bottom: none; border-radius: 4px 4px 0 0; }
+  #tabs button.on { background: #eef1f5; border-color: #1a6dd4; font-weight: bold; }
+  #cellbar { padding: 6px 12px; background: #ffffff; border-bottom: 1px solid #d8dce2; }
+  #cellref {
+    display: inline-block; min-width: 56px; text-align: center; padding: 3px 6px;
+    border: 1px solid #d8dce2; border-radius: 4px; color: #6b7480; font-family: Consolas, monospace;
+  }
+  #grid-wrap { overflow: auto; padding: 0 12px 12px; }
+  table { border-collapse: collapse; }
+  th, td { border: 1px solid #d8dce2; }
+  thead th { background: #eef1f5; color: #6b7480; font-size: 12px; padding: 4px 6px; min-width: 88px; }
+  tbody th { background: #eef1f5; color: #6b7480; font-size: 12px; padding: 3px 6px; min-width: 42px; }
+  td {
+    background: #ffffff; padding: 3px 6px; min-width: 88px; max-width: 300px;
+    white-space: nowrap; overflow: hidden;
+  }
+  td.num { text-align: right; }
+  td.formula { color: #0a7a5a; }
+  td.edited { background: #fff4d6; }
+  .warn {
+    margin: 8px 12px; padding: 9px 11px; border: 1px solid #d29b00;
+    background: #fff4d6; font-size: 13px;
+  }
+  .err { border-color: #b3261e; background: #fdeceb; }
+  #intro { padding: 20px 24px; color: #444c55; max-width: 760px; }
+  #intro h2 { font-size: 16px; color: #1b1f24; }
+  #intro li { margin: 4px 0; }
+  .hide { display: none; }
+</style>
+</head>
+<body>
+
+<div id="header">
+  <div class="row">
+    <h1>엑셀 편집기</h1>
+    <button id="pick" class="primary">엑셀 파일 열기…</button>
+    <input type="file" id="picker" class="hide">
+    <span id="dirty" class="hide">저장 안 됨</span>
+    <span id="status"></span>
+  </div>
+  <div class="row">
+    <span class="muted">파일 경로</span>
+    <input type="text" id="path" placeholder="\\10.1.5.20\공유폴더\파일.xlsx  (직접 입력해서 열거나, 이 경로로 저장할 수 있습니다)">
+    <button id="openpath">이 경로 열기</button>
+    <button id="revert" disabled>변경 취소</button>
+    <button id="save" class="primary" disabled>저장 (Ctrl+S)</button>
+  </div>
+  <div class="row muted">
+    <input type="checkbox" id="backup" checked> 저장할 때 원본을 <b>.bak</b> 으로 백업
+    &nbsp;|&nbsp; 인터넷 · 서버 연결 없음. 이 PC 안에서만 처리됩니다.
+  </div>
+</div>
+
+<div id="notice" class="warn hide"></div>
+
+<div id="app" class="hide">
+  <div id="tabs"></div>
+  <div id="cellbar">
+    <span id="cellref">–</span>
+    <span id="cellinfo" class="muted">셀을 클릭해 값을 입력하세요. = 로 시작하면 수식으로 저장됩니다.</span>
+  </div>
+  <div id="grid-wrap"><div id="grid"></div></div>
+</div>
+
+<div id="intro">
+  <h2>공유폴더의 엑셀 파일을 열고, 고치고, 같은 파일에 그대로 저장합니다.</h2>
+  <ol>
+    <li><b>엑셀 파일 열기</b>로 파일을 고릅니다. (또는 경로를 붙여넣고 <b>이 경로 열기</b>)</li>
+    <li>표에서 값을 고칩니다. 바뀐 셀은 노란색으로 표시됩니다.</li>
+    <li><b>저장</b>을 누르면 그 파일에 바로 저장됩니다. 권한 창도, 다운로드도 없습니다.</li>
+  </ol>
+  <p>
+    저장할 때는 임시 파일에 먼저 쓰고 <b>다시 읽어 바이트 단위로 검증한 뒤</b> 원본을 교체합니다.
+    검증에 실패하면 원본은 손대지 않습니다. 수정하지 않은 부분은 원본 그대로 다시 저장하므로
+    서식 · 수식 · 차트 · 시트 보호가 유지됩니다.
+  </p>
+  <p class="muted">
+    이 프로그램은 네트워크를 전혀 쓰지 않습니다. 파일은 이 PC 밖으로 나가지 않습니다.
+  </p>
+</div>
+
+<script src="./vendor/fflate.min.js"></script>
+<script src="./vendor/xlsx-core.js"></script>
+<script type="text/javascript">
+/* =========================================================================
+ * 엑셀 편집기 — HTA(오프라인) 버전
+ *
+ * 브라우저 페이지가 아니라 Windows 내장 mshta.exe 로 실행되므로
+ * 파일 쓰기 권한 요청이 없다. 인터넷 · 로컬 서버 모두 필요 없다.
+ *
+ * IE 엔진에서 돌기 때문에 ES5 문법만 쓰고,
+ * closest / dataset / Promise / classList.toggle(x,force) 는 쓰지 않는다.
+ * ========================================================================= */
+(function () {
+  'use strict';
+
+  var SPARE_ROWS = 20, SPARE_COLS = 3, PAGE_ROWS = 200;
+
+  var wb = null;              // 현재 워크북 모델
+  var currentPath = '';       // 저장 대상 경로
+  var activeSheet = 0;
+  var visibleRows = PAGE_ROWS;
+  var edits = {};             // "sheet:row:col" -> 입력 문자열 (IE 대비 Map 대신 객체)
+  var editCount = 0;
+
+  function el(id) { return document.getElementById(id); }
+  function setClass(node, cls, on) {
+    var has = (' ' + node.className + ' ').indexOf(' ' + cls + ' ') >= 0;
+    if (on && !has) node.className = node.className ? node.className + ' ' + cls : cls;
+    else if (!on && has) {
+      node.className = (' ' + node.className + ' ').replace(' ' + cls + ' ', ' ')
+        .replace(/^\s+|\s+$/g, '');
+    }
+  }
+  function show(node, on) { setClass(node, 'hide', !on); }
+  function tdOf(node) {                       // closest('td') 대체
+    while (node && node.nodeType === 1) {
+      if (node.tagName === 'TD') return node;
+      node = node.parentNode;
+    }
+    return null;
+  }
+  function attr(node, name) { return node.getAttribute(name); }   // dataset 대체
+
+  function setStatus(msg, kind) {
+    var s = el('status');
+    s.innerHTML = '';
+    s.appendChild(document.createTextNode(msg || ''));
+    s.className = kind === 'ok' ? 'st-ok' : (kind === 'err' ? 'st-err' : 'muted');
+  }
+  function notice(msg, isError) {
+    var n = el('notice');
+    n.innerHTML = msg;
+    n.className = isError ? 'warn err' : 'warn';
+    show(n, !!msg);
+  }
+  function refreshDirty() {
+    show(el('dirty'), editCount > 0);
+    el('dirty').innerHTML = editCount + '개 셀 수정됨 · 저장 안 됨';
+    el('save').disabled = !wb || editCount === 0;
+    el('revert').disabled = editCount === 0;
+  }
+
+  /* ------------------------------------------------------------ 파일 입출력 */
+
+  function activeX(name) {
+    try {
+      return new ActiveXObject(name);
+    } catch (e) {
+      throw new Error('이 PC 에서 ' + name + ' 을(를) 쓸 수 없습니다. ' +
+                      '보안 정책으로 차단된 것으로 보입니다. (' + e.message + ')');
+    }
+  }
+
+  function readBytes(path) {
+    var s = activeX('ADODB.Stream');
+    s.Type = 1;                        // 바이너리
+    s.Open();
+    try {
+      s.LoadFromFile(path);
+      var raw = s.Read();
+      var arr = new VBArray(raw).toArray();
+      var out = new Uint8Array(arr.length);
+      for (var i = 0; i < arr.length; i++) out[i] = arr[i];
+      return out;
+    } finally {
+      try { s.Close(); } catch (e2) {}
+    }
+  }
+
+  function writeBytes(path, bytes) {
+    // 바이트 -> 문자(0-255) 문자열. iso-8859-1 은 바이트와 1:1 로 대응한다.
+    var parts = [], chunk = 8192, i, j, codes;
+    for (i = 0; i < bytes.length; i += chunk) {
+      codes = [];
+      for (j = i; j < i + chunk && j < bytes.length; j++) codes.push(String.fromCharCode(bytes[j]));
+      parts.push(codes.join(''));
+    }
+    var s = activeX('ADODB.Stream');
+    s.Type = 2;                        // 텍스트로 쓰고
+    s.Charset = 'iso-8859-1';
+    s.Open();
+    try {
+      s.WriteText(parts.join(''));
+      s.Position = 0;
+      s.Type = 1;                      // 바이너리로 바꿔서 저장 (BOM 없이)
+      s.SaveToFile(path, 2);           // 2 = 덮어쓰기
+    } finally {
+      try { s.Close(); } catch (e2) {}
+    }
+  }
+
+  function sameBytes(a, b) {
+    if (a.length !== b.length) return false;
+    for (var i = 0; i < a.length; i++) if (a[i] !== b[i]) return false;
+    return true;
+  }
+
+  /**
+   * 임시 파일에 쓰고 -> 다시 읽어 바이트 비교 -> 통과하면 원본 교체.
+   * 검증에 실패하면 원본은 건드리지 않는다. (환자 정보가 든 파일을 다루므로)
+   */
+  function saveSafely(path, bytes, makeBackup) {
+    var fso = activeX('Scripting.FileSystemObject');
+    var tmp = path + '.saving.tmp';
+
+    if (fso.FileExists(tmp)) fso.DeleteFile(tmp, true);
+    writeBytes(tmp, bytes);
+
+    var back = readBytes(tmp);
+    if (!sameBytes(back, bytes)) {
+      throw new Error('저장 검증에 실패했습니다. 원본은 그대로 두었습니다. ' +
+                      '(임시 파일: ' + tmp + ')');
+    }
+
+    if (fso.FileExists(path)) {
+      if (makeBackup) {
+        var bak = path + '.bak';
+        if (fso.FileExists(bak)) fso.DeleteFile(bak, true);
+        fso.CopyFile(path, bak, true);
+      }
+      fso.DeleteFile(path, true);
+    }
+    fso.MoveFile(tmp, path);
+  }
+
+  /* ---------------------------------------------------------------- 열기 */
+
+  el('pick').onclick = function () {
+    if (!confirmDiscard()) return;
+    el('picker').click();
+  };
+
+  el('picker').onchange = function () {
+    var v = el('picker').value || '';
+    if (!v) return;
+    if (v.indexOf('\\') < 0 || v.toLowerCase().indexOf('fakepath') >= 0) {
+      notice('이 PC 의 보안 설정 때문에 전체 경로를 가져오지 못했습니다. ' +
+             '탐색기 주소창에서 파일 경로를 복사해 위의 <b>파일 경로</b> 칸에 붙여넣고 ' +
+             '[이 경로 열기] 를 누르세요.', true);
+      return;
+    }
+    openPath(v);
+  };
+
+  el('openpath').onclick = function () {
+    var v = el('path').value;
+    if (!v) { setStatus('경로를 입력하세요.', 'err'); return; }
+    if (!confirmDiscard()) return;
+    openPath(v);
+  };
+
+  function openPath(path) {
+    setStatus('불러오는 중…');
+    notice('');
+    var bytes;
+    try {
+      bytes = readBytes(path);
+    } catch (e) {
+      setStatus('열기 실패', 'err');
+      notice('파일을 읽지 못했습니다.<br>' + escapeHtml(e.message) +
+             '<br>경로가 정확한지, 파일이 다른 프로그램에서 열려 있지 않은지 확인하세요.', true);
+      return;
+    }
+    try {
+      wb = XlsxCore.parseWorkbook(bytes);
+    } catch (e2) {
+      setStatus('열기 실패', 'err');
+      notice('엑셀 파일로 읽을 수 없습니다: ' + escapeHtml(e2.message) +
+             '<br>구형 .xls 파일이라면 엑셀에서 .xlsx 로 저장한 뒤 다시 시도하세요.', true);
+      wb = null;
+      return;
+    }
+    currentPath = path;
+    el('path').value = path;
+    activeSheet = 0; visibleRows = PAGE_ROWS; edits = {}; editCount = 0;
+    show(el('intro'), false);
+    show(el('app'), true);
+    renderTabs(); renderGrid(); refreshDirty(); layout();
+    setStatus('이 파일에 바로 저장됩니다.', 'ok');
+  }
+
+  function escapeHtml(s) {
+    return String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+  }
+
+  /* ------------------------------------------------------------ 화면 그리기 */
+
+  function renderTabs() {
+    var tabs = el('tabs');
+    tabs.innerHTML = '';
+    for (var i = 0; i < wb.sheets.length; i++) {
+      (function (idx) {
+        var b = document.createElement('button');
+        b.innerHTML = escapeHtml(wb.sheets[idx].name);
+        if (idx === activeSheet) b.className = 'on';
+        b.onclick = function () {
+          activeSheet = idx; visibleRows = PAGE_ROWS;
+          renderTabs(); renderGrid();
+        };
+        tabs.appendChild(b);
+      })(i);
+    }
+  }
+
+  function sourceText(cell) {
+    if (!cell) return '';
+    return cell.formula ? '=' + cell.formula : cell.text;
+  }
+  function editKey(row, col) { return activeSheet + ':' + row + ':' + col; }
+  function hasEdit(key) { return Object.prototype.hasOwnProperty.call(edits, key); }
+
+  function renderGrid() {
+    var sheet = wb.sheets[activeSheet];
+    var totalRows = Math.max(sheet.rowCount + SPARE_ROWS, 1);
+    var cols = Math.max(sheet.colCount + SPARE_COLS, 8);
+    var shown = Math.min(totalRows, visibleRows);
+
+    var html = ['<table><thead><tr><th></th>'];
+    for (var c = 1; c <= cols; c++) html.push('<th>' + XlsxCore.colToName(c) + '</th>');
+    html.push('</tr></thead><tbody>');
+
+    for (var r = 1; r <= shown; r++) {
+      html.push('<tr><th>' + r + '</th>');
+      for (var c2 = 1; c2 <= cols; c2++) {
+        var cell = sheet.cells[r + ',' + c2] || null;
+        var key = editKey(r, c2);
+        var edited = hasEdit(key);
+        var cls = edited ? 'edited' : (cell && cell.formula ? 'formula'
+                 : (cell && typeof cell.value === 'number' && !cell.isDate ? 'num' : ''));
+        var text = edited ? edits[key] : (cell ? cell.text : '');
+        html.push('<td contenteditable="true" data-row="' + r + '" data-col="' + c2 + '"' +
+                  (cls ? ' class="' + cls + '"' : '') + '>' + escapeHtml(text) + '</td>');
+      }
+      html.push('</tr>');
+    }
+    html.push('</tbody></table>');
+
+    if (shown < totalRows) {
+      html.push('<p><button id="more">행 ' + PAGE_ROWS + '개 더 보기 (' +
+                shown + ' / ' + totalRows + ')</button></p>');
+    }
+    el('grid').innerHTML = html.join('');
+    if (el('more')) {
+      el('more').onclick = function () { visibleRows += PAGE_ROWS; renderGrid(); };
+    }
+  }
+
+  /* ---------------------------------------------------------------- 셀 편집 */
+
+  var grid = el('grid');
+
+  grid.addEventListener('focusin', function (e) {
+    var td = tdOf(e.target || e.srcElement);
+    if (!td) return;
+    var row = +attr(td, 'data-row'), col = +attr(td, 'data-col');
+    var cell = wb.sheets[activeSheet].cells[row + ',' + col] || null;
+    el('cellref').innerHTML = XlsxCore.makeRef(row, col);
+    el('cellinfo').innerHTML = cell && cell.formula
+      ? '수식 셀입니다. 값을 직접 입력하면 수식이 사라집니다.'
+      : (cell && cell.isDate ? '날짜 셀입니다. YYYY-MM-DD 형식으로 입력하세요.' : '');
+    if (cell && cell.formula && !hasEdit(editKey(row, col))) {
+      td.innerHTML = escapeHtml('=' + cell.formula);   // 엑셀처럼 수식 자체를 보여준다
+    }
+  }, false);
+
+  grid.addEventListener('focusout', function (e) {
+    var td = tdOf(e.target || e.srcElement);
+    if (!td) return;
+    commitCell(td);
+    el('cellref').innerHTML = '–';
+  }, false);
+
+  grid.addEventListener('keyup', function (e) {
+    var td = tdOf(e.target || e.srcElement);
+    if (td) trackCell(td);
+  }, false);
+
+  grid.addEventListener('paste', function (e) {
+    // 서식 있는 붙여넣기가 셀 안에 HTML 을 남기지 않도록 값만 남긴다.
+    var td = tdOf(e.target || e.srcElement);
+    if (!td) return;
+    setTimeout(function () {
+      var text = td.innerText || td.textContent || '';
+      text = text.replace(/[\r\n\t]+/g, ' ');
+      td.innerHTML = escapeHtml(text);
+      trackCell(td);
+    }, 0);
+  }, false);
+
+  grid.addEventListener('keydown', function (e) {
+    var td = tdOf(e.target || e.srcElement);
+    if (!td) return;
+    var key = e.keyCode;
+    if (key === 13 && !e.shiftKey) { e.preventDefault(); move(td, 1, 0); }       // Enter
+    else if (key === 27) {                                                       // Esc
+      e.preventDefault();
+      var row = +attr(td, 'data-row'), col = +attr(td, 'data-col');
+      var cell = wb.sheets[activeSheet].cells[row + ',' + col] || null;
+      delete edits[editKey(row, col)];
+      editCount = countEdits();
+      td.innerHTML = escapeHtml(sourceText(cell));
+      setClass(td, 'edited', false);
+      refreshDirty();
+      td.blur();
+    }
+    else if (key === 38) { e.preventDefault(); move(td, -1, 0); }                 // ↑
+    else if (key === 40) { e.preventDefault(); move(td, 1, 0); }                  // ↓
+  }, false);
+
+  function move(td, dr, dc) {
+    var row = +attr(td, 'data-row') + dr, col = +attr(td, 'data-col') + dc;
+    var next = grid.querySelector('td[data-row="' + row + '"][data-col="' + col + '"]');
+    if (next) next.focus();
+  }
+
+  function countEdits() {
+    var n = 0, k;
+    for (k in edits) if (Object.prototype.hasOwnProperty.call(edits, k)) n++;
+    return n;
+  }
+
+  function cellText(td) {
+    var t = td.innerText;
+    if (t === undefined || t === null) t = td.textContent || '';
+    return String(t).replace(/[\r\n]+$/, '');
+  }
+
+  function trackCell(td) {
+    var row = +attr(td, 'data-row'), col = +attr(td, 'data-col');
+    var cell = wb.sheets[activeSheet].cells[row + ',' + col] || null;
+    var key = editKey(row, col);
+    var text = cellText(td);
+    if (text === sourceText(cell)) delete edits[key];
+    else edits[key] = text;
+    editCount = countEdits();
+    setClass(td, 'edited', hasEdit(key));
+    refreshDirty();
+  }
+
+  function commitCell(td) {
+    trackCell(td);
+    var row = +attr(td, 'data-row'), col = +attr(td, 'data-col');
+    if (!hasEdit(editKey(row, col))) {
+      var cell = wb.sheets[activeSheet].cells[row + ',' + col] || null;
+      td.innerHTML = escapeHtml(cell ? cell.text : '');
+    }
+  }
+
+  /* -------------------------------------------------------------- 되돌리기 */
+
+  el('revert').onclick = function () {
+    if (!editCount) return;
+    if (!window.confirm('저장하지 않은 수정 ' + editCount + '건을 모두 취소할까요?')) return;
+    edits = {}; editCount = 0;
+    renderGrid(); refreshDirty();
+    setStatus('수정 사항을 취소했습니다.');
+  };
+
+  /* ------------------------------------------------------------------ 저장 */
+
+  el('save').onclick = save;
+
+  document.onkeydown = function (e) {
+    e = e || window.event;
+    if (e.ctrlKey && (e.keyCode === 83)) {                 // Ctrl+S
+      if (!el('save').disabled) { save(); }
+      return false;
+    }
+    return true;
+  };
+
+  function save() {
+    if (!wb || !editCount) return;
+    var active = document.activeElement;
+    if (active && active.tagName === 'TD') { commitCell(active); active.blur(); }
+    if (!editCount) return;
+
+    var target = el('path').value || currentPath;
+    if (!target) { setStatus('저장할 경로가 없습니다.', 'err'); return; }
+
+    var list = [], k, p;
+    for (k in edits) {
+      if (!Object.prototype.hasOwnProperty.call(edits, k)) continue;
+      p = k.split(':');
+      list.push({ sheet: +p[0], row: +p[1], col: +p[2], text: edits[k] });
+    }
+
+    setStatus('저장 중…');
+    notice('');
+
+    var bytes;
+    try {
+      bytes = XlsxCore.writeWorkbook(wb, list);
+    } catch (e) {
+      setStatus('저장 실패', 'err');
+      notice('파일을 만드는 중 오류가 발생했습니다: ' + escapeHtml(e.message) +
+             '<br>원본은 그대로입니다.', true);
+      return;
+    }
+
+    try {
+      saveSafely(target, bytes, el('backup').checked);
+    } catch (e2) {
+      setStatus('저장 실패', 'err');
+      notice('저장하지 못했습니다.<br>' + escapeHtml(e2.message) +
+             '<br><b>수정 내용은 화면에 그대로 남아 있습니다.</b> ' +
+             '파일이 엑셀에서 열려 있으면 닫고 다시 저장하세요.', true);
+      return;
+    }
+
+    // 디스크에 실제로 저장된 내용을 다시 읽어 화면을 맞춘다.
+    try {
+      wb = XlsxCore.parseWorkbook(readBytes(target));
+    } catch (e3) {
+      wb = XlsxCore.parseWorkbook(bytes);
+    }
+    currentPath = target;
+    edits = {}; editCount = 0;
+    renderTabs(); renderGrid(); refreshDirty();
+    var now = new Date();
+    setStatus('저장했습니다 · ' + now.getHours() + '시 ' + now.getMinutes() + '분', 'ok');
+  }
+
+  function confirmDiscard() {
+    if (!editCount) return true;
+    return window.confirm('저장하지 않은 수정 ' + editCount + '건이 있습니다. 버리고 계속할까요?');
+  }
+
+  window.onbeforeunload = function () {
+    if (editCount) return '저장하지 않은 수정이 ' + editCount + '건 있습니다.';
+  };
+
+  /* -------------------------------------------------------------- 창 크기 */
+
+  function layout() {
+    var h = document.body.clientHeight - el('header').offsetHeight;
+    var n = el('notice');
+    if ((' ' + n.className + ' ').indexOf(' hide ') < 0) h -= n.offsetHeight;
+    if ((' ' + el('app').className + ' ').indexOf(' hide ') < 0) {
+      h -= el('tabs').offsetHeight + el('cellbar').offsetHeight;
+      el('grid-wrap').style.height = Math.max(h - 8, 120) + 'px';
+    }
+  }
+  window.onresize = layout;
+
+  /* ---------------------------------------------------------- 시작할 때 점검 */
+
+  try {
+    activeX('Scripting.FileSystemObject');
+    activeX('ADODB.Stream');
+  } catch (e) {
+    notice('<b>이 PC 에서는 파일 접근 기능을 쓸 수 없습니다.</b><br>' + escapeHtml(e.message) +
+           '<br>보안 정책으로 차단된 경우입니다. 관리 부서에 문의하거나, ' +
+           '브라우저용 HTML 버전을 로컬 웹서버로 여는 방법을 쓰세요.', true);
+  }
+  refreshDirty();
+  layout();
+})();
+</script>
+</body>
+</html>

@@ -4,9 +4,11 @@
   "type": "module",
   "description": "public/excel-editor.html 과 public/vendor/xlsx-core.js 에 대한 테스트 (본체 앱과 의존성 분리)",
   "scripts": {
-    "test": "node core.test.mjs && node ui.test.mjs",
+    "test": "node core.test.mjs && node ui.test.mjs && node hta.test.mjs",
     "test:core": "node core.test.mjs",
-    "test:ui": "node ui.test.mjs"
+    "test:ui": "node ui.test.mjs",
+    "test:hta": "node hta.test.mjs",
+    "check:ie": "node ../../scripts/check-ie-compat.mjs ../../hta/excel-editor.hta.html"
   },
   "devDependencies": {
     "@xmldom/xmldom": "^0.9.0",
