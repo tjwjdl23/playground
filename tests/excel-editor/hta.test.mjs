@@ -195,6 +195,25 @@ const after = await readDisk(FILE);
 ok(Buffer.compare(Buffer.from(before), Buffer.from(after)) === 0, '원본 파일은 전혀 바뀌지 않았다');
 ok((await page.textContent('#dirty')).includes('개 셀'), '수정 내용이 화면에 남아 있다');
 
+console.log('\n[HTA-6] 실행 위치(보안 구역) 판별');
+{
+  const cases = await page.evaluate(() => {
+    const I = window.__htaInternals;
+    return {
+      unc: I.path('file://10.1.5.20/%EC%8B%A0%EA%B2%BD%EC%99%B8%EA%B3%BC/%EA%B3%A0%EC%84%9C%EC%A0%95/x.hta'),
+      uncIsNet: I.isNetwork('file://10.1.5.20/a/b.hta'),
+      local: I.path('file:///C:/Users/hong/Desktop/%EC%97%91%EC%85%80%ED%8E%B8%EC%A7%91%EA%B8%B0.hta'),
+      localIsNet: I.isNetwork('file:///C:/Users/hong/Desktop/x.hta'),
+      httpIsNet: I.isNetwork(location.href)
+    };
+  });
+  ok(cases.unc === '\\\\10.1.5.20\\신경외과\\고서정\\x.hta', 'UNC 경로 복원: ' + cases.unc);
+  ok(cases.uncIsNet === true, '네트워크 실행으로 판정');
+  ok(cases.local === 'C:\\Users\\hong\\Desktop\\엑셀편집기.hta', '로컬 경로 복원: ' + cases.local);
+  ok(cases.localIsNet === false, '로컬 실행은 제한 대상 아님');
+  ok(cases.httpIsNet === false, 'http 로 연 경우도 제한 대상 아님');
+}
+
 ok(errors.length === 0, '자바스크립트 오류 없음' + (errors.length ? ': ' + errors.join(' | ') : ''));
 
 await browser.close();

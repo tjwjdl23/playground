@@ -122,7 +122,10 @@
     서식 · 수식 · 차트 · 시트 보호가 유지됩니다.
   </p>
   <p class="muted">
-    이 프로그램은 네트워크를 전혀 쓰지 않습니다. 파일은 이 PC 밖으로 나가지 않습니다.
+    이 프로그램은 네트워크를 전혀 쓰지 않습니다. 파일은 이 PC 밖으로 나가지 않습니다.<br>
+    단, <b>이 프로그램 파일 자체는 내 PC(바탕화면 등)에 두고 실행</b>해야 합니다.
+    공유폴더에서 바로 실행하면 Windows 보안 구역 제한 때문에 파일을 열 수 없습니다.
+    편집할 엑셀 파일은 공유폴더에 있어도 됩니다.
   </p>
 </div>
 
@@ -271,6 +274,68 @@
     fso.MoveFile(tmp, path);
   }
 
+  /* ------------------------------------------------- 실행 위치(보안 구역) */
+
+  // 네트워크 경로(\\서버\...)에서 실행하면 Windows 가 인터넷 구역으로 취급해
+  // 파일 접근을 막는다. file://호스트/... 처럼 host 가 있으면 네트워크 실행이다.
+  function isNetworkHref(href) {
+    return /^file:\/\/[^/]/.test(href);        // file://서버/... (호스트 있음)
+  }
+  function onNetworkPath() {
+    return isNetworkHref(location.href);
+  }
+
+  function currentHtaPath(hrefIn) {
+    var href;
+    try { href = decodeURIComponent(hrefIn || location.href); } catch (e) { href = hrefIn || location.href; }
+    if (href.indexOf('file://') !== 0) return '';
+    var rest = href.substring(7);
+    if (rest.charAt(0) === '/') {                    // file:///C:/... -> C:\...
+      return rest.replace(/^\/+/, '').replace(/\//g, '\\');
+    }
+    return '\\\\' + rest.replace(/\//g, '\\');       // file://서버/... -> \\서버\...
+  }
+
+  function copyToLocalAndRun() {
+    var src = currentHtaPath();
+    if (!src) { notice('현재 파일 경로를 알 수 없습니다. 수동으로 복사해 주세요.', true); return; }
+    try {
+      var shell = activeX('WScript.Shell');
+      var fso = activeX('Scripting.FileSystemObject');
+      var dir = shell.ExpandEnvironmentStrings('%LOCALAPPDATA%') + '\\ExcelEditor';
+      if (!fso.FolderExists(dir)) fso.CreateFolder(dir);
+      var name = src.substring(src.lastIndexOf('\\') + 1);
+      var dest = dir + '\\' + name;
+      fso.CopyFile(src, dest, true);
+      shell.Run('"' + dest + '"', 1, false);
+      window.close();
+    } catch (e) {
+      notice('자동 복사에 실패했습니다: ' + escapeHtml(e.message) +
+             '<br>이 파일(<b>' + escapeHtml(src) + '</b>)을 <b>바탕화면</b>으로 직접 복사한 뒤 ' +
+             '거기서 실행해 주세요.', true);
+    }
+  }
+
+  function zoneHelp(extra) {
+    var src = currentHtaPath();
+    return '<b>이 프로그램이 네트워크 폴더에서 실행되고 있습니다.</b><br>' +
+           'Windows 는 <code>\\\\서버\\...</code> 경로를 인터넷 구역으로 취급해서 파일 접근을 막습니다. ' +
+           '<b>이 프로그램 파일만 내 PC 로 옮기면</b> 해결됩니다. ' +
+           '(편집할 엑셀 파일은 공유폴더에 그대로 두셔도 됩니다.)<br>' +
+           '현재 위치: <code>' + escapeHtml(src) + '</code><br><br>' +
+           '<button id="selfcopy">내 PC 로 복사해서 다시 열기</button>' +
+           (extra ? '<br><br><span class="muted">원래 오류: ' + escapeHtml(extra) + '</span>' : '');
+  }
+
+  function wireZoneButton() {
+    var b = document.getElementById('selfcopy');
+    if (b) b.onclick = copyToLocalAndRun;
+  }
+
+  function isZoneError(msg) {
+    return /도메인|domain|액세스할 수 없|denied|권한|Automation|자동화/i.test(String(msg));
+  }
+
   /* ---------------------------------------------------------------- 열기 */
 
   el('pick').onclick = function () {
@@ -305,8 +370,13 @@
       bytes = readBytes(path);
     } catch (e) {
       setStatus('열기 실패', 'err');
-      notice('파일을 읽지 못했습니다.<br>' + escapeHtml(e.message) +
-             '<br>경로가 정확한지, 파일이 다른 프로그램에서 열려 있지 않은지 확인하세요.', true);
+      if (onNetworkPath() || isZoneError(e.message)) {
+        notice(zoneHelp(e.message), true);
+        wireZoneButton();
+      } else {
+        notice('파일을 읽지 못했습니다.<br>' + escapeHtml(e.message) +
+               '<br>경로가 정확한지, 파일이 다른 프로그램에서 열려 있지 않은지 확인하세요.', true);
+      }
       return;
     }
     try {
@@ -550,9 +620,15 @@
       saveSafely(target, bytes, el('backup').checked);
     } catch (e2) {
       setStatus('저장 실패', 'err');
-      notice('저장하지 못했습니다.<br>' + escapeHtml(e2.message) +
-             '<br><b>수정 내용은 화면에 그대로 남아 있습니다.</b> ' +
-             '파일이 엑셀에서 열려 있으면 닫고 다시 저장하세요.', true);
+      if (onNetworkPath() || isZoneError(e2.message)) {
+        notice(zoneHelp(e2.message) +
+               '<br><b>수정 내용은 화면에 그대로 남아 있습니다.</b>', true);
+        wireZoneButton();
+      } else {
+        notice('저장하지 못했습니다.<br>' + escapeHtml(e2.message) +
+               '<br><b>수정 내용은 화면에 그대로 남아 있습니다.</b> ' +
+               '파일이 엑셀에서 열려 있으면 닫고 다시 저장하세요.', true);
+      }
       return;
     }
 
@@ -593,16 +669,24 @@
 
   /* ---------------------------------------------------------- 시작할 때 점검 */
 
-  try {
-    activeX('Scripting.FileSystemObject');
-    activeX('ADODB.Stream');
-  } catch (e) {
-    notice('<b>이 PC 에서는 파일 접근 기능을 쓸 수 없습니다.</b><br>' + escapeHtml(e.message) +
-           '<br>보안 정책으로 차단된 경우입니다. 관리 부서에 문의하거나, ' +
-           '브라우저용 HTML 버전을 로컬 웹서버로 여는 방법을 쓰세요.', true);
+  if (onNetworkPath()) {
+    // 파일을 열어보기 전에 미리 알려준다. 여기서 막히는 게 가장 흔한 경우다.
+    notice(zoneHelp(''), true);
+    wireZoneButton();
+  } else {
+    try {
+      activeX('Scripting.FileSystemObject');
+      activeX('ADODB.Stream');
+    } catch (e) {
+      notice('<b>이 PC 에서는 파일 접근 기능을 쓸 수 없습니다.</b><br>' + escapeHtml(e.message) +
+             '<br>보안 정책으로 차단된 경우입니다. 관리 부서에 문의하세요.', true);
+    }
   }
   refreshDirty();
   layout();
+
+  // 테스트에서 경로 변환을 확인하기 위한 통로 (기능에는 관여하지 않는다)
+  window.__htaInternals = { path: currentHtaPath, isNetwork: isNetworkHref };
 })();
 </script>
 </body>
