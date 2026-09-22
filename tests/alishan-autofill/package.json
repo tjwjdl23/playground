@@ -1,0 +1,12 @@
+{
+  "name": "alishan-autofill-tests",
+  "private": true,
+  "type": "module",
+  "description": "public/alishan-autofill.html 북마크 동작 테스트 (본체 앱과 의존성 분리)",
+  "scripts": {
+    "test": "node ui.test.mjs"
+  },
+  "devDependencies": {
+    "playwright": "^1.47.0"
+  }
+}

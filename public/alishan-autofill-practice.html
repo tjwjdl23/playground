@@ -1,0 +1,74 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>아리산 예매 연습 화면</title>
+<style>
+  :root { --bg: #f6f7f9; --panel: #fff; --border: #d8dce2; --text: #1b1f24; --muted: #6b7480; }
+  @media (prefers-color-scheme: dark) {
+    :root { --bg: #16191d; --panel: #1e2227; --border: #333a42; --text: #e6e9ed; --muted: #9aa4b0; }
+  }
+  body { margin: 0; background: var(--bg); color: var(--text); font: 16px/1.6 system-ui, "Malgun Gothic", sans-serif; }
+  main { max-width: 520px; margin: 0 auto; padding: 24px 16px; }
+  form { background: var(--panel); border: 1px solid var(--border); border-radius: 10px; padding: 16px; }
+  label { display: block; font-weight: 600; margin: 12px 0 4px; }
+  select, input { font: inherit; width: 100%; padding: 8px; box-sizing: border-box; }
+  .captcha { display: flex; gap: 8px; align-items: center; }
+  .captcha span { font: 700 20px monospace; letter-spacing: 4px; padding: 4px 10px; background: #ddd; color: #333; }
+  button { margin-top: 16px; font: inherit; padding: 8px 20px; }
+  #result { margin-top: 12px; color: var(--muted); }
+</style>
+</head>
+<body>
+<main>
+  <h1>연습 화면 (실제 예매 아님)</h1>
+  <p style="color:var(--muted)">공식 사이트 첫 화면과 비슷하게 만든 연습용입니다. 북마크바의 [아리산 …] 버튼을 눌러 보세요.
+    출발역을 바꾸면 도착역 목록이 잠시 뒤에 다시 채워지는 것도 흉내 냈습니다.</p>
+  <form id="f">
+    <label for="rideDate">乘車日期 Date</label>
+    <input type="text" id="rideDate" name="rideDate" placeholder="yyyy/mm/dd" readonly>
+
+    <label for="startStation">起站 From</label>
+    <select id="startStation" name="startStation"></select>
+
+    <label for="endStation">迄站 To</label>
+    <select id="endStation" name="endStation"><option value="">請先選擇起站</option></select>
+
+    <label for="qty">張數 Qty</label>
+    <select id="qty" name="qty"><option>1</option><option>2</option><option>3</option><option>4</option></select>
+
+    <label for="validCode">驗證碼 Verification code</label>
+    <div class="captcha"><span id="code"></span><input type="text" id="validCode" name="validCode"></div>
+
+    <button type="submit">下一步 Next</button>
+    <p id="result"></p>
+  </form>
+</main>
+<script>
+var LINE = [['01', '嘉義 Chiayi'], ['02', '北門 Beimen'], ['03', '竹崎 Zhuqi'], ['04', '奮起湖 Fenqihu'],
+            ['05', '十字路 Shizilu'], ['06', '阿里山 Alishan']];
+var start = document.getElementById('startStation');
+start.add(new Option('請選擇', ''));
+LINE.forEach(function (s) { start.add(new Option(s[1], s[0])); });
+var end = document.getElementById('endStation');
+start.addEventListener('change', function () {
+  end.innerHTML = '<option value="">載入中…</option>';
+  setTimeout(function () {
+    end.innerHTML = '<option value="">請選擇</option>';
+    LINE.forEach(function (s) { if (s[0] !== start.value) end.add(new Option(s[1], s[0])); });
+  }, 400);
+});
+var code = String(Math.floor(1000 + Math.random() * 9000));
+document.getElementById('code').textContent = code;
+document.getElementById('f').addEventListener('submit', function (e) {
+  e.preventDefault();
+  var ok = document.getElementById('validCode').value === code;
+  document.getElementById('result').textContent = ok
+    ? '연습 완료: ' + document.getElementById('rideDate').value + ' ' +
+      start.options[start.selectedIndex].text + ' → ' + end.options[end.selectedIndex].text
+    : '인증문자가 틀렸습니다.';
+});
+</script>
+</body>
+</html>

@@ -1,0 +1,358 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>아리산 예매 날짜·역 채우기</title>
+<style>
+  :root {
+    --bg: #f6f7f9;
+    --panel: #ffffff;
+    --border: #d8dce2;
+    --text: #1b1f24;
+    --muted: #6b7480;
+    --accent: #1a6dd4;
+    --accent-text: #ffffff;
+    --note-bg: #fff4d6;
+    --note-text: #6b4e00;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #16191d; --panel: #1e2227; --border: #333a42; --text: #e6e9ed; --muted: #9aa4b0;
+      --accent: #4f9bff; --accent-text: #0b1017; --note-bg: #3d3417; --note-text: #f0d68a;
+    }
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; background: var(--bg); color: var(--text);
+    font: 16px/1.6 system-ui, -apple-system, "Segoe UI", "Apple SD Gothic Neo", "Malgun Gothic", sans-serif;
+  }
+  main { max-width: 640px; margin: 0 auto; padding: 24px 16px 48px; }
+  h1 { font-size: 22px; margin: 0 0 4px; }
+  h2 { font-size: 17px; margin: 28px 0 8px; }
+  p { margin: 6px 0; }
+  .muted { color: var(--muted); font-size: 14px; }
+  .panel { background: var(--panel); border: 1px solid var(--border); border-radius: 10px; padding: 16px; }
+  label { display: block; font-weight: 600; margin: 12px 0 4px; }
+  label:first-child { margin-top: 0; }
+  select, input[type=date] {
+    font: inherit; width: 100%; padding: 8px 10px; border-radius: 6px;
+    border: 1px solid var(--border); background: var(--panel); color: var(--text);
+  }
+  .row { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+  #bookmarklet {
+    display: inline-block; margin-top: 4px; padding: 10px 18px; border-radius: 8px;
+    background: var(--accent); color: var(--accent-text); font-weight: 700; text-decoration: none;
+    cursor: grab;
+  }
+  #summary { margin-top: 10px; }
+  #error { color: #d33; }
+  ol { padding-left: 22px; }
+  li { margin: 6px 0; }
+  .note { background: var(--note-bg); color: var(--note-text); border-radius: 8px; padding: 10px 14px; font-size: 14px; }
+</style>
+</head>
+<body>
+<main>
+  <h1>아리산 예매: 날짜·역 채우기</h1>
+  <p class="muted">아리산 삼림철도 예매 첫 화면에서 <b>탑승일, 출발역, 도착역</b>만 채워 주는 북마크 버튼을 만듭니다.
+    인증문자, 매수, 다음 버튼, 시간·구매자 정보, 결제는 모두 사람이 직접 합니다.</p>
+
+  <h2>1. 탑승 정보 고르기</h2>
+  <div class="panel">
+    <label for="date">탑승일</label>
+    <input type="date" id="date">
+    <div class="row">
+      <div>
+        <label for="from">출발역</label>
+        <select id="from"></select>
+      </div>
+      <div>
+        <label for="to">도착역</label>
+        <select id="to"></select>
+      </div>
+    </div>
+    <p id="summary"></p>
+    <p id="error"></p>
+  </div>
+
+  <h2>2. 버튼을 북마크바로 끌어다 놓기</h2>
+  <div class="panel">
+    <p><a id="bookmarklet" href="#">아리산 채우기</a></p>
+    <p class="muted">PC 크롬/엣지 기준입니다. 북마크바가 안 보이면 <b>Ctrl + Shift + B</b>.
+      탑승 정보를 바꾸면 버튼을 <b>다시 끌어다 놓아야</b> 새 정보가 들어갑니다 (옛 북마크는 지우세요).</p>
+  </div>
+
+  <h2>3. 예매 당일</h2>
+  <ol>
+    <li>오픈 몇 분 전에 공식 예매 사이트 첫 화면(날짜·역 선택 화면)을 열어 둡니다.</li>
+    <li>오픈 시각이 되면 페이지를 새로고침하고, 북마크바의 <b>[아리산 …]</b> 버튼을 한 번 누릅니다.</li>
+    <li>날짜·역이 채워지고(노란 테두리) 커서가 인증문자 칸으로 갑니다. 화면 오른쪽 위에 무엇을 채웠는지 표시됩니다.</li>
+    <li><b>채워진 값이 맞는지 눈으로 확인</b>하고, 매수와 인증문자를 입력한 뒤 [다음]은 직접 누릅니다.</li>
+  </ol>
+  <p class="note">연습용 화면: <a href="alishan-autofill-practice.html" target="_blank">alishan-autofill-practice.html</a>에서
+    북마크를 미리 눌러 보세요. 실제 사이트의 화면 구조가 달라 못 채운 칸이 있으면 오른쪽 위 안내에 <b>"직접 선택"</b>으로 표시되니, 그 칸만 손으로 고르면 됩니다.</p>
+</main>
+
+<script>
+// 북마크로 예매 페이지에서 실행되는 함수. 이 함수 전체가 북마크 주소로 직렬화되므로
+// 바깥 변수에 의존하지 않는다. 값을 채우고 이벤트만 발생시킬 뿐, 어떤 버튼도 누르지 않는다.
+function aliFill(cfg) {
+  var docs = [document];
+  var frames = document.querySelectorAll('iframe');
+  for (var i = 0; i < frames.length; i++) {
+    try { if (frames[i].contentDocument) docs.push(frames[i].contentDocument); } catch (e) { /* 다른 도메인 */ }
+  }
+  function all(sel) {
+    var out = [];
+    docs.forEach(function (d) { out.push.apply(out, d.querySelectorAll(sel)); });
+    return out.filter(function (el) { return !el.disabled && el.type !== 'hidden'; });
+  }
+  function norm(s) { return String(s || '').replace(/\s+/g, '').toLowerCase().replace(/台/g, '臺'); }
+
+  // 요소 주변 글자(라벨·이름·속성)로 출발/도착/날짜/인증 칸을 구분한다.
+  // 옵션 글자(예: 奮起湖)가 섞이지 않도록 select 안쪽 글자는 빼고 모은다.
+  function ownText(node) {
+    if (!node || node.nodeName === 'SELECT') return '';
+    if (node.nodeType === 3) return node.nodeValue;
+    var t = '';
+    for (var i = 0; i < node.childNodes.length; i++) t += ' ' + ownText(node.childNodes[i]);
+    return t;
+  }
+  function hint(el) {
+    var parts = [el.id, el.name, el.getAttribute('placeholder'), el.getAttribute('aria-label'), el.title];
+    if (el.labels) for (var i = 0; i < el.labels.length; i++) parts.push(el.labels[i].textContent);
+    parts.push(ownText(el.previousElementSibling));
+    parts.push(ownText(el.parentElement).slice(0, 80));
+    return parts.join(' ').replace(/([a-z])([A-Z])/g, '$1 $2').replace(/[_-]/g, ' ').toLowerCase();
+  }
+  var FROM_RE = /\bfrom\b|start|depart|origin|起站|起點|起程|出發|上車|啟程|출발/;
+  var TO_RE = /\bto\b|dest|arriv|迄|到達|抵達|下車|終點|도착/;
+  var DATE_RE = /date|day|日期|乘車日|搭乘日|날짜/;
+  var CAPTCHA_RE = /captcha|verif|valid|checkcode|驗證|檢查碼|認證|인증/;
+
+  function stationScore(text, aliases) {
+    var t = norm(text), best = 0;
+    aliases.forEach(function (a) {
+      a = norm(a);
+      if (!a) return;
+      if (t === a || t === a + '站' || t === a + 'station') best = Math.max(best, 3);
+      else if (t.indexOf(a) === 0) best = Math.max(best, 2);
+      else if (t.indexOf(a) >= 0) best = Math.max(best, 1);
+    });
+    return best;
+  }
+  function bestOption(sel, aliases) {
+    var best = null, score = 0;
+    for (var i = 0; i < sel.options.length; i++) {
+      var o = sel.options[i];
+      var s = Math.max(stationScore(o.text, aliases), stationScore(o.value, aliases));
+      if (s > score) { score = s; best = o; }
+    }
+    return best;
+  }
+  function setSelect(sel, opt) {
+    sel.value = opt.value;
+    opt.selected = true;
+    fire(sel);
+  }
+  function setInput(el, value) {
+    var proto = Object.getPrototypeOf(el);
+    var desc = Object.getOwnPropertyDescriptor(proto, 'value');
+    if (desc && desc.set) desc.set.call(el, value); else el.value = value;
+    fire(el);
+  }
+  function fire(el) {
+    ['input', 'change', 'blur'].forEach(function (t) {
+      el.dispatchEvent(new Event(t, { bubbles: true }));
+    });
+  }
+  function mark(el) {
+    el.style.outline = '3px solid #f5b800';
+    el.style.outlineOffset = '2px';
+  }
+
+  var report = [];
+  var STATIONS = cfg.stations;
+
+  // --- 출발/도착역: 역 이름이 옵션으로 들어 있는 select 들 ---
+  var stationSelects = all('select').filter(function (s) {
+    var n = 0;
+    for (var i = 0; i < s.options.length; i++) {
+      for (var k in STATIONS) if (stationScore(s.options[i].text, STATIONS[k]) >= 2) { n++; break; }
+    }
+    return n >= 2;
+  });
+  var fromSel = null, toSel = null;
+  stationSelects.forEach(function (s) {
+    var h = hint(s);
+    if (!fromSel && FROM_RE.test(h) && !TO_RE.test(h)) fromSel = s;
+    else if (!toSel && TO_RE.test(h) && !FROM_RE.test(h)) toSel = s;
+  });
+  // 라벨로 못 가르면 화면 순서대로 (앞 = 출발, 뒤 = 도착).
+  var rest = stationSelects.filter(function (s) { return s !== fromSel && s !== toSel; });
+  if (!fromSel) fromSel = rest.shift() || null;
+  if (!toSel) toSel = rest.shift() || null;
+
+  function fillStation(sel, key, label) {
+    if (!sel) { report.push(label + ': 칸을 못 찾음 → 직접 선택'); return false; }
+    var opt = bestOption(sel, STATIONS[key]);
+    if (!opt) { report.push(label + ': 목록에 ' + STATIONS[key][0] + ' 없음 → 직접 선택'); return false; }
+    setSelect(sel, opt);
+    mark(sel);
+    report.push(label + ': ' + opt.text.trim() + ' ✓');
+    return true;
+  }
+
+  // --- 탑승일 ---
+  var y = cfg.date.slice(0, 4), m = cfg.date.slice(5, 7), d = cfg.date.slice(8, 10);
+  function fillDate() {
+    var dateInputs = all('input[type=date]');
+    if (dateInputs.length) {
+      setInput(dateInputs[0], y + '-' + m + '-' + d); mark(dateInputs[0]);
+      return report.push('탑승일: ' + cfg.date + ' ✓');
+    }
+    var texts = all('input:not([type]), input[type=text], input[type=search]').filter(function (el) {
+      return DATE_RE.test(hint(el)) && !CAPTCHA_RE.test(hint(el));
+    });
+    if (texts.length) {
+      var el = texts[0];
+      var sample = el.value || el.getAttribute('placeholder') || '';
+      var sep = /\d{4}-\d{1,2}-\d{1,2}/.test(sample) ? '-' : '/';
+      var v = y + sep + m + sep + d;
+      setInput(el, v); mark(el);
+      return report.push('탑승일: ' + v + ' ✓');
+    }
+    // 날짜가 드롭다운으로 나오는 화면: 옵션 글자/값에 날짜가 들어 있는 select.
+    var forms = [y + '/' + m + '/' + d, y + '-' + m + '-' + d, y + m + d, m + '/' + d, (+m) + '/' + (+d),
+                 (+m) + '月' + (+d) + '日', (y - 1911) + '/' + m + '/' + d].map(norm);
+    var sels = all('select').filter(function (s) { return stationSelects.indexOf(s) < 0; });
+    for (var i = 0; i < sels.length; i++) {
+      for (var j = 0; j < sels[i].options.length; j++) {
+        var o = sels[i].options[j];
+        var t = norm(o.text) + '|' + norm(o.value);
+        if (forms.some(function (f) { return t.indexOf(f) >= 0; })) {
+          setSelect(sels[i], o); mark(sels[i]);
+          return report.push('탑승일: ' + o.text.trim() + ' ✓');
+        }
+      }
+    }
+    report.push('탑승일: 칸을 못 찾았거나 아직 열리지 않은 날짜 → 직접 선택');
+  }
+
+  // --- 인증문자 칸으로 커서 이동 (입력은 사람이) ---
+  function focusCaptcha() {
+    var cands = all('input:not([type]), input[type=text], input[type=tel], input[type=number]').filter(function (el) {
+      if (CAPTCHA_RE.test(hint(el))) return true;
+      var p = el.parentElement;
+      return !!(p && p.querySelector('img[src*="aptcha"], img[src*="alid"], img[src*="erify"], canvas'));
+    });
+    if (cands.length) {
+      cands[0].scrollIntoView({ block: 'center' });
+      cands[0].focus();
+      report.push('인증문자 칸으로 커서 이동 → 직접 입력');
+    }
+  }
+
+  function toast() {
+    var box = document.getElementById('__aliFillToast') || document.createElement('div');
+    box.id = '__aliFillToast';
+    box.style.cssText = 'position:fixed;top:12px;right:12px;z-index:2147483647;max-width:360px;' +
+      'background:#1b1f24;color:#fff;font:14px/1.6 sans-serif;padding:12px 16px;border-radius:10px;' +
+      'box-shadow:0 4px 16px rgba(0,0,0,.3);white-space:pre-line;cursor:pointer';
+    box.textContent = '아리산 채우기\n' + report.join('\n') + '\n\n값이 맞는지 꼭 확인하세요. (눌러서 닫기)';
+    box.onclick = function () { box.remove(); };
+    document.body.appendChild(box);
+  }
+
+  fillDate();
+  fillStation(fromSel, cfg.from, '출발역');
+  // 출발역을 바꾸면 도착역 목록을 새로 불러오는 화면이 있어, 목록이 바뀔 때까지 잠깐(최대 3초) 기다린다.
+  // 페이지가 스스로 목록을 갱신하는 것을 기다릴 뿐, 사이트에 추가 요청을 보내지 않는다.
+  var tries = 0;
+  (function waitTo() {
+    // 처음엔 비어 있던 도착역 칸(예: "起站을 먼저 선택")이나 통째로 새로 그려진 칸을 다시 찾는다.
+    if (!toSel || !toSel.isConnected || !bestOption(toSel, STATIONS[cfg.to])) {
+      var cands = all('select').filter(function (s) { return s !== fromSel && bestOption(s, STATIONS[cfg.to]); });
+      toSel = cands.filter(function (s) { return TO_RE.test(hint(s)); })[0] || cands[0] ||
+        (toSel && toSel.isConnected ? toSel : null);
+    }
+    if ((!toSel || !bestOption(toSel, STATIONS[cfg.to])) && tries++ < 15) return setTimeout(waitTo, 200);
+    fillStation(toSel, cfg.to, '도착역');
+    focusCaptcha();
+    toast();
+  })();
+}
+
+// ------------------------------------------------------------------------
+// 설정 화면
+// 한자 · 영문 · 한글 이름을 모두 넣어 두면 사이트가 어떤 언어로 떠도 옵션을 찾는다.
+var STATIONS = {
+  chiayi:   ['嘉義', 'Chiayi', '자이'],
+  beimen:   ['北門', 'Beimen', '베이먼'],
+  zhuqi:    ['竹崎', 'Zhuqi', '주치'],
+  fenqihu:  ['奮起湖', 'Fenqihu', '펀치후'],
+  shizilu:  ['十字路', 'Shizilu', '스쯔루'],
+  alishan:  ['阿里山', 'Alishan', '아리산'],
+  shenmu:   ['神木', 'Shenmu', '선무'],
+  zhaoping: ['沼平', 'Zhaoping', '자오핑'],
+  duigaoyue:['對高岳', 'Duigaoyue', '두이가오웨'],
+  zhushan:  ['祝山', 'Zhushan', '주산']
+};
+var LABELS = {
+  chiayi: '자이 (嘉義)', beimen: '베이먼 (北門)', zhuqi: '주치 (竹崎)', fenqihu: '펀치후 (奮起湖)',
+  shizilu: '스쯔루 (十字路)', alishan: '아리산 (阿里山)', shenmu: '선무 (神木)', zhaoping: '자오핑 (沼平)',
+  duigaoyue: '두이가오웨 (對高岳)', zhushan: '주산 (祝山)'
+};
+
+var $ = function (id) { return document.getElementById(id); };
+Object.keys(LABELS).forEach(function (k) {
+  $('from').add(new Option(LABELS[k], k));
+  $('to').add(new Option(LABELS[k], k));
+});
+
+// 로컬 날짜 그대로 YYYY-MM-DD (toISOString 은 UTC 로 바꿔 한국 시간에서 하루 밀린다).
+function ymd(d) {
+  return d.getFullYear() + '-' + ('0' + (d.getMonth() + 1)).slice(-2) + '-' + ('0' + d.getDate()).slice(-2);
+}
+
+function load() {
+  var saved = null;
+  try { saved = JSON.parse(localStorage.getItem('alishanAutofill') || 'null'); } catch (e) {}
+  var d = new Date();
+  d.setDate(d.getDate() + 14);
+  $('date').value = (saved && saved.date) || ymd(d);
+  $('from').value = (saved && saved.from) || 'chiayi';
+  $('to').value = (saved && saved.to) || 'alishan';
+}
+
+function update() {
+  var cfg = { date: $('date').value, from: $('from').value, to: $('to').value };
+  try { localStorage.setItem('alishanAutofill', JSON.stringify(cfg)); } catch (e) {}
+  var err = !cfg.date ? '탑승일을 골라 주세요.' : cfg.from === cfg.to ? '출발역과 도착역이 같습니다.' : '';
+  $('error').textContent = err;
+  var a = $('bookmarklet');
+  if (err) { a.removeAttribute('href'); $('summary').textContent = ''; return; }
+  // 고른 두 역만이 아니라 전체 역 이름을 넘긴다. 예매 화면에서 "역 목록 select"(옵션 중 역 이름이
+  // 2개 이상)를 알아보는 데 쓴다.
+  cfg.stations = STATIONS;
+  a.href = 'javascript:' + encodeURIComponent('(' + aliFill.toString() + ')(' + JSON.stringify(cfg) + ');void 0');
+  a.textContent = '아리산 ' + cfg.date.slice(5).replace('-', '/') + ' ' +
+    STATIONS[cfg.from][2] + '→' + STATIONS[cfg.to][2];
+  var open = new Date(cfg.date + 'T00:00:00');
+  open.setDate(open.getDate() - 14);
+  $('summary').innerHTML = '<b>' + cfg.date + '</b> ' + LABELS[cfg.from] + ' → ' + LABELS[cfg.to] +
+    '<br><span class="muted">공식 사이트 온라인 예매는 보통 탑승 14일 전(' + ymd(open) +
+    ')부터 열립니다. 정확한 오픈 시각은 공식 안내에서 확인하세요.</span>';
+}
+
+$('bookmarklet').addEventListener('click', function (e) {
+  e.preventDefault();
+  alert('여기서 누르는 버튼이 아니에요.\n북마크바로 끌어다 놓은 뒤, 예매 사이트에서 눌러 주세요.');
+});
+['date', 'from', 'to'].forEach(function (id) { $(id).addEventListener('change', update); });
+load();
+update();
+</script>
+</body>
+</html>

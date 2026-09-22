@@ -23,6 +23,13 @@ are repacked byte-for-byte, so formatting, formulas and charts survive.
 
 Open it at `/playground/excel-editor.html`. Details (Korean): [docs/excel-editor.md](./docs/excel-editor.md).
 
+## Alishan booking helper
+
+`public/alishan-autofill.html` builds a bookmarklet that fills in only the date
+and the departure/arrival stations on the first screen of the Alishan Forest
+Railway booking site. The captcha, [Next], passenger details and payment are
+left to a person. Details (Korean): [docs/alishan-autofill.md](./docs/alishan-autofill.md).
+
 ## Deployment
 
 Pushing to `main` triggers `.github/workflows/deploy.yml`, which builds the
